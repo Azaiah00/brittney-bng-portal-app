@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, FlatList, TouchableOpacity, SafeAreaView, Platf
 import { useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
-import { useIsTablet } from '../../lib/hooks';
+import { useIsTablet, useBreakpoint } from '../../lib/hooks';
 
 // Mock data for leads
 const MOCK_LEADS = [
@@ -21,6 +21,8 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 export default function LeadsScreen() {
   const isTablet = useIsTablet();
+  const bp = useBreakpoint();
+  const isMobile = bp === 'mobile';
   const router = useRouter();
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'new'>('all');
@@ -234,7 +236,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 16,
   },
@@ -314,7 +316,7 @@ const styles = StyleSheet.create({
     ...SHADOWS.sm,
   },
   listContent: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 100,
   },
   leadItem: {

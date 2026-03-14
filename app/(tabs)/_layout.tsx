@@ -1,97 +1,137 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Platform, Image } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  SafeAreaView,
+  Platform,
+  Image,
+} from 'react-native';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
+import { useBreakpoint } from '../../lib/hooks';
 
-// Custom Top Navigation Bar
+const NAV_ITEMS = [
+  { route: '/', label: 'Dashboard', icon: 'th-large' },
+  { route: '/leads', label: 'Leads', icon: 'users' },
+  { route: '/projects', label: 'Projects', icon: 'briefcase' },
+  { route: '/calendar', label: 'Calendar', icon: 'calendar' },
+  { route: '/settings', label: 'Settings', icon: 'cog' },
+];
+
 function TopNavBar() {
   const pathname = usePathname();
   const router = useRouter();
+  const bp = useBreakpoint();
+  const isMobile = bp === 'mobile';
+  const isDesktop = bp === 'desktop';
 
-  const navItems = [
-    { route: '/', label: 'Dashboard', icon: 'th-large' },
-    { route: '/leads', label: 'Leads', icon: 'users' },
-    { route: '/projects', label: 'Projects', icon: 'briefcase' },
-    { route: '/calendar', label: 'Calendar', icon: 'calendar' },
-    { route: '/settings', label: 'Settings', icon: 'cog' },
-  ];
+  const isActive = (route: string) =>
+    route === '/' ? pathname === '/' : pathname.startsWith(route);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.headerContainer}>
-        {/* Top Row: Logo, Search, Profile */}
-        <View style={styles.topRow}>
-          <View style={styles.logoContainer}>
-            <Image 
-              source={require('../../assets/images/logo-bng.png')} 
-              style={styles.logoImage}
+      <View style={[styles.headerContainer, isMobile && styles.headerContainerMobile]}>
+
+        {/* ── Top Row ── */}
+        <View style={[styles.topRow, isMobile && styles.topRowMobile]}>
+
+          {/* Logo */}
+          <TouchableOpacity onPress={() => router.push('/')} activeOpacity={0.8}>
+            <Image
+              source={require('../../assets/images/logo-bng.png')}
+              style={[styles.logoImage, isMobile && styles.logoImageMobile]}
               resizeMode="contain"
             />
-          </View>
+          </TouchableOpacity>
 
-          <View style={styles.searchContainer}>
-            <FontAwesome name="search" size={16} color={BNG_COLORS.textMuted} style={styles.searchIcon} />
-            <Text style={styles.searchText}>Search tasks, leads...</Text>
-            <View style={styles.shortcutBadge}>
-              <Text style={styles.shortcutText}>⌘F</Text>
+          {/* Search — hidden on mobile */}
+          {!isMobile && (
+            <View style={[styles.searchContainer, isDesktop && styles.searchContainerDesktop]}>
+              <FontAwesome name="search" size={15} color={BNG_COLORS.textMuted} style={{ marginRight: 10 }} />
+              <Text style={styles.searchText}>Search tasks, leads...</Text>
+              <View style={styles.shortcutBadge}>
+                <Text style={styles.shortcutText}>⌘F</Text>
+              </View>
             </View>
-          </View>
+          )}
 
-          <View style={styles.actionsContainer}>
-            <TouchableOpacity style={styles.iconButton}>
-              <FontAwesome name="envelope-o" size={18} color={BNG_COLORS.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton}>
-              <View style={styles.notificationDot} />
-              <FontAwesome name="bell-o" size={18} color={BNG_COLORS.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.profileContainer}>
+          {/* Right Actions */}
+          <View style={styles.actionsRow}>
+            {!isMobile && (
+              <>
+                <TouchableOpacity style={styles.iconButton}>
+                  <FontAwesome name="envelope-o" size={17} color={BNG_COLORS.textSecondary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton}>
+                  <View style={styles.notificationDot} />
+                  <FontAwesome name="bell-o" size={17} color={BNG_COLORS.textSecondary} />
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Avatar always visible */}
+            <TouchableOpacity
+              style={[styles.profileRow, isMobile && styles.profileRowMobile]}
+              onPress={() => router.push('/settings')}
+              activeOpacity={0.8}
+            >
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>BW</Text>
+                <Text style={styles.avatarText}>BR</Text>
               </View>
-              <View style={styles.profileInfo}>
-                <Text style={styles.profileName}>Brittney Reader</Text>
-                <Text style={styles.profileEmail}>brittany@bng.com</Text>
-              </View>
+              {isDesktop && (
+                <View style={styles.profileInfo}>
+                  <Text style={styles.profileName}>Brittney Reader</Text>
+                  <Text style={styles.profileEmail}>brittany@bng.com</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Bottom Row: Tabs */}
-        <View style={styles.tabsContainer}>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            contentContainerStyle={styles.tabsScroll}
+        {/* ── Tab Row ── */}
+        <View style={[styles.tabsRow, isMobile && styles.tabsRowMobile]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[styles.tabsScroll, isMobile && styles.tabsScrollMobile]}
           >
-            {navItems.map((item) => {
-              // Exact match for index, prefix match for others
-              const isActive = item.route === '/' 
-                ? pathname === '/' 
-                : pathname.startsWith(item.route);
-
+            {NAV_ITEMS.map((item) => {
+              const active = isActive(item.route);
               return (
                 <TouchableOpacity
                   key={item.route}
-                  style={[styles.tabItem, isActive && styles.tabItemActive]}
+                  style={[
+                    styles.tabItem,
+                    isMobile && styles.tabItemMobile,
+                    active && styles.tabItemActive,
+                  ]}
                   onPress={() => router.push(item.route as any)}
                   activeOpacity={0.8}
                 >
                   <FontAwesome
                     name={item.icon as any}
-                    size={16}
-                    color={isActive ? '#FFF' : BNG_COLORS.textSecondary}
-                    style={styles.tabIcon}
+                    size={isMobile ? 18 : 15}
+                    color={active ? '#FFF' : BNG_COLORS.textSecondary}
+                    style={{ marginRight: isMobile ? 0 : 7 }}
                   />
-                  <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                    {item.label}
-                  </Text>
+                  {!isMobile && (
+                    <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                      {item.label}
+                    </Text>
+                  )}
+                  {isMobile && active && (
+                    <View style={styles.mobileDot} />
+                  )}
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
         </View>
+
       </View>
     </SafeAreaView>
   );
@@ -100,9 +140,9 @@ function TopNavBar() {
 export default function TabLayout() {
   return (
     <Tabs
-      tabBar={() => null} // Hide the default bottom tab bar entirely
+      tabBar={() => null}
       screenOptions={{
-        header: () => <TopNavBar />, // Use our custom top navigation bar
+        header: () => <TopNavBar />,
         sceneStyle: { backgroundColor: BNG_COLORS.background },
       }}
     >
@@ -125,47 +165,51 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 12,
       },
-      android: {
-        elevation: 8,
-      },
+      android: { elevation: 8 },
     }),
     zIndex: 100,
   },
   headerContainer: {
     backgroundColor: BNG_COLORS.surface,
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'android' ? 40 : 16,
-    paddingBottom: 16,
+    paddingTop: Platform.OS === 'android' ? 36 : 12,
+    paddingBottom: 0,
+  },
+  headerContainerMobile: {
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 28 : 8,
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 24,
+    marginBottom: 16,
   },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  topRowMobile: {
+    marginBottom: 8,
   },
   logoImage: {
-    width: 140,
-    height: 40,
+    width: 130,
+    height: 38,
+  },
+  logoImageMobile: {
+    width: 100,
+    height: 30,
   },
   searchContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: BNG_COLORS.background,
-    marginHorizontal: 32,
-    paddingHorizontal: 16,
-    height: 44,
-    borderRadius: 22,
-    maxWidth: 400,
+    marginHorizontal: 24,
+    paddingHorizontal: 14,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: BNG_COLORS.border,
   },
-  searchIcon: {
-    marginRight: 10,
+  searchContainerDesktop: {
+    maxWidth: 440,
   },
   searchText: {
     flex: 1,
@@ -174,26 +218,26 @@ const styles = StyleSheet.create({
   },
   shortcutBadge: {
     backgroundColor: BNG_COLORS.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: BNG_COLORS.border,
   },
   shortcutText: {
-    fontSize: 12,
+    fontSize: 11,
     color: BNG_COLORS.textSecondary,
     fontWeight: '600',
   },
-  actionsContainer: {
+  actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 10,
   },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 1,
     borderColor: BNG_COLORS.border,
     alignItems: 'center',
@@ -202,76 +246,105 @@ const styles = StyleSheet.create({
   },
   notificationDot: {
     position: 'absolute',
-    top: 10,
-    right: 12,
+    top: 9,
+    right: 11,
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: BNG_COLORS.accent,
     zIndex: 1,
   },
-  profileContainer: {
+  profileRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginLeft: 8,
+    gap: 10,
+  },
+  profileRowMobile: {
+    gap: 0,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FDE68A', // Warm yellow background for avatar
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FDE68A',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     color: '#92400E',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
   },
   profileInfo: {
-    display: Platform.OS === 'web' || Platform.isPad ? 'flex' : 'none',
+    gap: 1,
   },
   profileName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: BNG_COLORS.text,
   },
   profileEmail: {
-    fontSize: 12,
+    fontSize: 11,
     color: BNG_COLORS.textMuted,
   },
-  tabsContainer: {
+  tabsRow: {
     borderTopWidth: 1,
     borderTopColor: BNG_COLORS.border,
-    paddingTop: 16,
-    marginHorizontal: -24, // Bleed to edges
+    paddingTop: 10,
+    marginHorizontal: -24,
+  },
+  tabsRowMobile: {
+    paddingTop: 6,
+    marginHorizontal: -16,
   },
   tabsScroll: {
     paddingHorizontal: 24,
-    gap: 12,
+    gap: 8,
+    paddingBottom: 10,
+  },
+  tabsScrollMobile: {
+    paddingHorizontal: 12,
+    gap: 4,
+    paddingBottom: 8,
+    justifyContent: 'space-between',
+    flexGrow: 1,
   },
   tabItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 100, // Pill shape
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 100,
     backgroundColor: BNG_COLORS.background,
+  },
+  tabItemMobile: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    width: 52,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   tabItemActive: {
     backgroundColor: BNG_COLORS.primary,
     ...SHADOWS.glowPrimary,
   },
-  tabIcon: {
-    marginRight: 8,
-  },
   tabText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: BNG_COLORS.textSecondary,
   },
   tabTextActive: {
     color: '#FFF',
+  },
+  mobileDot: {
+    position: 'absolute',
+    bottom: 6,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: BNG_COLORS.accent,
   },
 });

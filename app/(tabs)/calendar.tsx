@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 16,
   },
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: BNG_COLORS.surface,
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     padding: 20,
     borderRadius: 16,
     marginBottom: 20,
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
   },
   weekCard: {
     backgroundColor: BNG_COLORS.surface,
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     padding: 20,
     borderRadius: 20,
     marginBottom: 20,
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     backgroundColor: BNG_COLORS.primary,
   },
   eventsSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     marginBottom: 20,
   },
   sectionHeader: {
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
     marginVertical: 16,
   },
   upcomingSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   milestoneCard: {
     flexDirection: 'row',

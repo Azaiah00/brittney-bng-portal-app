@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, FlatList, TouchableOpacity, SafeAreaView, Platf
 import { useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
+import { useResponsivePadding } from '../../lib/hooks';
 
 // Mock data for projects
 const MOCK_PROJECTS = [
@@ -46,6 +47,7 @@ const STATUS_CONFIG: Record<string, { bg: string; text: string; icon: string }> 
 
 export default function ProjectsScreen() {
   const router = useRouter();
+  const pad = useResponsivePadding();
   const [filter, setFilter] = useState<'all' | 'active'>('all');
 
   const filteredProjects = filter === 'all' 
@@ -104,7 +106,7 @@ export default function ProjectsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: pad }]}>
         <View>
           <Text style={styles.title}>Projects</Text>
           <Text style={styles.subtitle}>Track your ongoing renovations</Text>
@@ -153,7 +155,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingHorizontal: 24,
     paddingTop: 16,
     paddingBottom: 16,
   },
@@ -180,7 +181,7 @@ const styles = StyleSheet.create({
   },
   filterTabs: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     marginBottom: 16,
     gap: 12,
   },
@@ -202,7 +203,8 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   listContent: {
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingTop: 8,
     paddingBottom: 40,
   },
   projectCard: {

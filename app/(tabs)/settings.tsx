@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     backgroundColor: BNG_COLORS.background,
   },
   header: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 16,
   },
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: BNG_COLORS.surface,
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginBottom: 16,
     padding: 20,
     borderRadius: 20,
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     backgroundColor: BNG_COLORS.surface,
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginBottom: 24,
     padding: 16,
     borderRadius: 16,
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 24,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   sectionTitle: {
     fontSize: 13,
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   versionSection: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginBottom: 24,
   },
   logoContainer: {
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginTop: 8,
     padding: 16,
     backgroundColor: `${BNG_COLORS.accent}10`,

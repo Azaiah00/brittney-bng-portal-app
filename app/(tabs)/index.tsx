@@ -10,7 +10,7 @@ import { useBreakpoint, useWindowDimensions } from '../../lib/hooks';
 import { fetchDashboardStats, fetchProjects, DashboardStats } from '../../lib/data';
 import { syncOfflineLeads } from '../../lib/offline';
 
-type ProjectItem = { id: string; title: string; status: string; phase: string | null; start_date: string | null };
+type ProjectItem = { id: string; title: string; status: string; phase: string | null; start_date: string | null; created_at: string };
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -31,7 +31,7 @@ export default function DashboardScreen() {
     try {
       const [s, p] = await Promise.all([fetchDashboardStats(), fetchProjects()]);
       setStats(s);
-      setProjects(p.slice(0, 5));
+      setProjects(p);
     } catch { /* Supabase may not be ready yet */ }
   }, []);
 
@@ -83,17 +83,36 @@ export default function DashboardScreen() {
     { label: 'New Leads', value: String(stats.newLeads), footer: 'Waiting for follow-up', primary: false },
   ];
 
-  // ── Bar chart from real project counts (simple weekly placeholder based on totals) ──
-  const total = stats.totalProjects || 1;
-  const barData = [
-    { day: 'S', value: Math.round((stats.pendingProjects / total) * 100) || 10, active: false },
-    { day: 'M', value: Math.round((stats.activeProjects / total) * 100) || 20, active: false },
-    { day: 'T', value: Math.round((stats.completedProjects / total) * 100) || 30, active: true, percent: `${stats.activeProjects}` },
-    { day: 'W', value: Math.round((stats.totalProjects / total) * 100), active: false },
-    { day: 'T', value: Math.round((stats.newLeads / (stats.totalLeads || 1)) * 100) || 15, active: false },
-    { day: 'F', value: 40, active: false },
-    { day: 'S', value: 20, active: false },
-  ];
+  // ── Project Analytics: real activity this week (projects created per day) ──
+  const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const getWeekBounds = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sun, 1 = Mon, ...
+    const sunday = new Date(now);
+    sunday.setDate(now.getDate() - dayOfWeek);
+    sunday.setHours(0, 0, 0, 0);
+    return { start: sunday };
+  };
+  const { start: weekStart } = getWeekBounds();
+  const dayCounts = weekDays.map((_, i) => {
+    const dayStart = new Date(weekStart);
+    dayStart.setDate(weekStart.getDate() + i);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayStart.getDate() + 1);
+    const dayStr = dayStart.toISOString().slice(0, 10);
+    const count = projects.filter((p) => {
+      const created = (p.created_at || '').slice(0, 10);
+      return created === dayStr;
+    }).length;
+    return { day: weekDays[i], count };
+  });
+  const maxCount = Math.max(1, ...dayCounts.map((d) => d.count));
+  const barData = dayCounts.map((d, i) => ({
+    day: d.day,
+    value: maxCount > 0 ? Math.round((d.count / maxCount) * 100) : 0,
+    active: d.count > 0 && d.count === maxCount,
+    percent: String(d.count),
+  }));
 
   const statCardWidth = isMobile ? (width - pad * 2 - 12) / 2 : undefined;
 
@@ -177,13 +196,14 @@ export default function DashboardScreen() {
 
         {/* ── Left Column ── */}
         <View style={[styles.column, isDesktop && styles.columnLeft]}>
-          {/* Analytics Chart */}
+          {/* Analytics Chart - projects created per day this week */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Project Analytics</Text>
+            <Text style={styles.chartSubtitle}>Projects created this week</Text>
             <View style={styles.chartContainer}>
               {barData.map((bar, i) => (
                 <View key={i} style={styles.barCol}>
-                  {bar.active && (
+                  {bar.active && bar.percent !== '0' && (
                     <View style={styles.tooltip}>
                       <Text style={styles.tooltipText}>{bar.percent}</Text>
                     </View>
@@ -191,14 +211,17 @@ export default function DashboardScreen() {
                   <View
                     style={[
                       styles.bar,
-                      { height: `${Math.max(bar.value, 5)}%` as any },
-                      bar.active ? styles.barActive : styles.barInactive,
+                      { height: `${bar.value > 0 ? Math.max(bar.value, 8) : 4}%` as any },
+                      bar.active && bar.value > 0 ? styles.barActive : styles.barInactive,
                     ]}
                   />
                   <Text style={styles.barLabel}>{bar.day}</Text>
                 </View>
               ))}
             </View>
+            {maxCount === 0 && (
+              <Text style={styles.chartEmpty}>No projects created this week yet.</Text>
+            )}
           </View>
 
           {/* Recent Activity -- shows latest projects */}
@@ -325,7 +348,7 @@ export default function DashboardScreen() {
                   No projects yet.
                 </Text>
               )}
-              {projects.map((p) => (
+              {projects.slice(0, 5).map((p) => (
                 <TouchableOpacity
                   key={p.id}
                   style={styles.projectListItem}
@@ -436,6 +459,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: BNG_COLORS.surface, borderRadius: 20, padding: 20, ...SHADOWS.sm },
   cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   cardTitle: { fontSize: 17, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 16 },
+  chartSubtitle: { fontSize: 12, color: BNG_COLORS.textMuted, marginBottom: 8, fontWeight: '500' },
+  chartEmpty: { fontSize: 13, color: BNG_COLORS.textMuted, textAlign: 'center', marginTop: 8 },
   outlineButton: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: 100, borderWidth: 1, borderColor: BNG_COLORS.border,

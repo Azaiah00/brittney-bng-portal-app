@@ -136,7 +136,7 @@ function TopNavBar() {
               {isDesktop && (
                 <View style={styles.profileInfo}>
                   <Text style={styles.profileName}>Brittney Reader</Text>
-                  <Text style={styles.profileEmail}>brittany@bng.com</Text>
+                  <Text style={styles.profileEmail}>services@bngremodel.com</Text>
                 </View>
               )}
             </TouchableOpacity>

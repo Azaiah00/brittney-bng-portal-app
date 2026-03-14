@@ -1,9 +1,9 @@
 // Gemini AI Service for BNG Remodel
 // All AI features call through this module.
-// Uses Gemini 2.0 Flash for fast, structured JSON responses.
+// Uses Gemini 2.5 Flash for fast, structured JSON responses.
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 // ---------------------------------------------------------------------------
 // Core API call helper

@@ -1,64 +1,55 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  StyleSheet, View, Text, FlatList, TouchableOpacity,
+  SafeAreaView, Platform,
+} from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
 import { useResponsivePadding } from '../../lib/hooks';
+import { fetchProjects } from '../../lib/data';
+import { Database } from '../../types/database';
 
-// Mock data for projects
-const MOCK_PROJECTS = [
-  { 
-    id: '1', 
-    title: 'Doe Kitchen Remodel', 
-    status: 'in-progress', 
-    start_date: '2026-04-01',
-    budget: '$45,000',
-    address: '123 Oak St, Richmond',
-    progress: 35,
-    phase: 'Demo'
-  },
-  { 
-    id: '2', 
-    title: 'Smith Bathroom Update', 
-    status: 'in-progress', 
-    start_date: '2026-04-15',
-    budget: '$18,500',
-    address: '456 Pine Ave, Richmond',
-    progress: 10,
-    phase: 'Planning'
-  },
-  { 
-    id: '3', 
-    title: 'Johnson Full Renovation', 
-    status: 'pending', 
-    start_date: '2026-05-01',
-    budget: '$125,000',
-    address: '789 Maple Dr, Richmond',
-    progress: 0,
-    phase: 'Contract'
-  },
-];
+type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
 const STATUS_CONFIG: Record<string, { bg: string; text: string; icon: string }> = {
-  'in-progress': { bg: `${BNG_COLORS.success}15`, text: BNG_COLORS.success, icon: 'play' },
-  'pending': { bg: `${BNG_COLORS.warning}15`, text: BNG_COLORS.warning, icon: 'clock-o' },
-  'completed': { bg: `${BNG_COLORS.info}15`, text: BNG_COLORS.info, icon: 'check' },
+  active: { bg: `${BNG_COLORS.success}15`, text: BNG_COLORS.success, icon: 'play' },
+  pending: { bg: `${BNG_COLORS.warning}15`, text: BNG_COLORS.warning, icon: 'clock-o' },
+  completed: { bg: `${BNG_COLORS.info}15`, text: BNG_COLORS.info, icon: 'check' },
 };
 
 export default function ProjectsScreen() {
   const router = useRouter();
   const pad = useResponsivePadding();
-  const [filter, setFilter] = useState<'all' | 'active'>('all');
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed' | 'pending'>('all');
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
 
-  const filteredProjects = filter === 'all' 
-    ? MOCK_PROJECTS 
-    : MOCK_PROJECTS.filter(p => p.status === 'in-progress');
+  const loadProjects = useCallback(async () => {
+    try {
+      const data = await fetchProjects();
+      setProjects(data);
+    } catch { /* Supabase may not be ready */ }
+  }, []);
 
-  const renderProjectItem = ({ item }: { item: typeof MOCK_PROJECTS[0] }) => {
+  useFocusEffect(useCallback(() => { loadProjects(); }, [loadProjects]));
+
+  const filteredProjects = filter === 'all'
+    ? projects
+    : projects.filter(p => p.status === filter);
+
+  const formatBudget = (budget: number | null) => {
+    if (!budget) return 'TBD';
+    if (budget >= 1000) return `$${(budget / 1000).toFixed(0)}K`;
+    return `$${budget}`;
+  };
+
+  const renderProjectItem = ({ item }: { item: ProjectRow }) => {
     const status = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending;
-    
+
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.projectCard}
         onPress={() => router.push(`/project/${item.id}`)}
         activeOpacity={0.9}
@@ -69,19 +60,19 @@ export default function ProjectsScreen() {
           </View>
           <View style={styles.projectInfo}>
             <Text style={styles.projectTitle}>{item.title}</Text>
-            <Text style={styles.projectAddress}>{item.address}</Text>
+            <Text style={styles.projectAddress}>{item.address || 'No address'}</Text>
           </View>
           <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-            <FontAwesome name={status.icon} size={12} color={status.text} style={{ marginRight: 4 }} />
+            <FontAwesome name={status.icon as any} size={12} color={status.text} style={{ marginRight: 4 }} />
             <Text style={[styles.statusText, { color: status.text }]}>
-              {item.status === 'in-progress' ? 'Active' : item.status}
+              {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
             </Text>
           </View>
         </View>
-        
+
         <View style={styles.progressSection}>
           <View style={styles.progressHeader}>
-            <Text style={styles.phaseText}>{item.phase} Phase</Text>
+            <Text style={styles.phaseText}>{item.phase || 'Planning'} Phase</Text>
             <Text style={styles.progressText}>{item.progress}%</Text>
           </View>
           <View style={styles.progressBarBg}>
@@ -92,11 +83,11 @@ export default function ProjectsScreen() {
         <View style={styles.projectFooter}>
           <View style={styles.footerItem}>
             <FontAwesome name="calendar" size={14} color={BNG_COLORS.textMuted} />
-            <Text style={styles.footerText}>{item.start_date}</Text>
+            <Text style={styles.footerText}>{item.start_date || 'No date'}</Text>
           </View>
           <View style={styles.footerItem}>
             <FontAwesome name="usd" size={14} color={BNG_COLORS.textMuted} />
-            <Text style={styles.footerText}>{item.budget}</Text>
+            <Text style={styles.footerText}>{formatBudget(item.budget)}</Text>
           </View>
           <FontAwesome name="arrow-right" size={16} color={BNG_COLORS.primary} />
         </View>
@@ -111,201 +102,130 @@ export default function ProjectsScreen() {
           <Text style={styles.title}>Projects</Text>
           <Text style={styles.subtitle}>Track your ongoing renovations</Text>
         </View>
-        <TouchableOpacity style={styles.filterButton}>
-          <FontAwesome name="sliders" size={20} color={BNG_COLORS.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => router.push('/add-project')}
+          >
+            <FontAwesome name="plus" size={16} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.filterButton}
+            onPress={() => setShowFilterMenu(!showFilterMenu)}
+          >
+            <FontAwesome name="sliders" size={20} color={BNG_COLORS.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
+      {/* Filter dropdown */}
+      {showFilterMenu && (
+        <View style={styles.filterDropdown}>
+          {(['all', 'active', 'completed', 'pending'] as const).map(f => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.filterDropdownItem, filter === f && styles.filterDropdownItemActive]}
+              onPress={() => { setFilter(f); setShowFilterMenu(false); }}
+            >
+              <Text style={[styles.filterDropdownText, filter === f && { color: '#FFF' }]}>
+                {f === 'all' ? 'All Projects' : f.charAt(0).toUpperCase() + f.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       <View style={styles.filterTabs}>
-        <TouchableOpacity 
-          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
-        >
-          <Text style={[styles.filterTabText, filter === 'all' && styles.filterTabTextActive]}>
-            All Projects
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.filterTab, filter === 'active' && styles.filterTabActive]}
-          onPress={() => setFilter('active')}
-        >
-          <Text style={[styles.filterTabText, filter === 'active' && styles.filterTabTextActive]}>
-            Active Only
-          </Text>
-        </TouchableOpacity>
+        {(['all', 'active'] as const).map(f => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.filterTab, filter === f && styles.filterTabActive]}
+            onPress={() => setFilter(f)}
+          >
+            <Text style={[styles.filterTabText, filter === f && styles.filterTabTextActive]}>
+              {f === 'all' ? 'All Projects' : 'Active Only'}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
-      
+
       <FlatList
         data={filteredProjects}
         keyExtractor={item => item.id}
         renderItem={renderProjectItem}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={{ padding: 40, alignItems: 'center' }}>
+            <FontAwesome name="briefcase" size={40} color={BNG_COLORS.textMuted} />
+            <Text style={{ color: BNG_COLORS.textMuted, fontSize: 16, marginTop: 12 }}>No projects found</Text>
+            <TouchableOpacity
+              style={{ marginTop: 16, backgroundColor: BNG_COLORS.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 }}
+              onPress={() => router.push('/add-project')}
+            >
+              <Text style={{ color: '#FFF', fontWeight: '700' }}>Add First Project</Text>
+            </TouchableOpacity>
+          </View>
+        }
       />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BNG_COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: BNG_COLORS.background },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingTop: 16,
-    paddingBottom: 16,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    paddingTop: 16, paddingBottom: 16,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: BNG_COLORS.text,
-    letterSpacing: -0.5,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: BNG_COLORS.textSecondary,
-    fontWeight: '500',
+  title: { fontSize: 32, fontWeight: '800', color: BNG_COLORS.text, letterSpacing: -0.5, marginBottom: 4 },
+  subtitle: { fontSize: 16, color: BNG_COLORS.textSecondary, fontWeight: '500' },
+  addButton: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: BNG_COLORS.primary,
+    alignItems: 'center', justifyContent: 'center', ...SHADOWS.sm,
   },
   filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: BNG_COLORS.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...SHADOWS.sm,
+    width: 44, height: 44, borderRadius: 12, backgroundColor: BNG_COLORS.surface,
+    alignItems: 'center', justifyContent: 'center', ...SHADOWS.sm,
   },
-  filterTabs: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    gap: 12,
+  filterDropdown: {
+    position: 'absolute', top: 80, right: 16, zIndex: 100,
+    backgroundColor: BNG_COLORS.surface, borderRadius: 12, padding: 4,
+    ...Platform.select({ ios: SHADOWS.lg, android: { elevation: 8 } }),
   },
-  filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: BNG_COLORS.surface,
-  },
-  filterTabActive: {
-    backgroundColor: BNG_COLORS.primary,
-  },
-  filterTabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: BNG_COLORS.textSecondary,
-  },
-  filterTabTextActive: {
-    color: '#FFF',
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 40,
-  },
+  filterDropdownItem: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 },
+  filterDropdownItemActive: { backgroundColor: BNG_COLORS.primary },
+  filterDropdownText: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.text },
+  filterTabs: { flexDirection: 'row', paddingHorizontal: 16, marginBottom: 16, gap: 12 },
+  filterTab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: BNG_COLORS.surface },
+  filterTabActive: { backgroundColor: BNG_COLORS.primary },
+  filterTabText: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.textSecondary },
+  filterTabTextActive: { color: '#FFF' },
+  listContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 },
   projectCard: {
-    backgroundColor: BNG_COLORS.surface,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    ...Platform.select({
-      ios: SHADOWS.md,
-      android: {
-        elevation: 4,
-        borderWidth: 1,
-        borderColor: BNG_COLORS.border,
-      },
-    }),
+    backgroundColor: BNG_COLORS.surface, borderRadius: 20, padding: 20, marginBottom: 16,
+    ...Platform.select({ ios: SHADOWS.md, android: { elevation: 4, borderWidth: 1, borderColor: BNG_COLORS.border } }),
   },
-  projectHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
+  projectHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
   projectIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: `${BNG_COLORS.primary}10`,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
+    width: 48, height: 48, borderRadius: 14, backgroundColor: `${BNG_COLORS.primary}10`,
+    alignItems: 'center', justifyContent: 'center', marginRight: 14,
   },
-  projectInfo: {
-    flex: 1,
-  },
-  projectTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: BNG_COLORS.text,
-    marginBottom: 4,
-  },
-  projectAddress: {
-    fontSize: 14,
-    color: BNG_COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'capitalize',
-  },
-  progressSection: {
-    marginBottom: 20,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  phaseText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: BNG_COLORS.textSecondary,
-  },
-  progressText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: BNG_COLORS.primary,
-  },
-  progressBarBg: {
-    height: 8,
-    backgroundColor: BNG_COLORS.border,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: BNG_COLORS.primary,
-    borderRadius: 4,
-  },
+  projectInfo: { flex: 1 },
+  projectTitle: { fontSize: 18, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 4 },
+  projectAddress: { fontSize: 14, color: BNG_COLORS.textSecondary, fontWeight: '500' },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  statusText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
+  progressSection: { marginBottom: 20 },
+  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  phaseText: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.textSecondary },
+  progressText: { fontSize: 14, fontWeight: '700', color: BNG_COLORS.primary },
+  progressBarBg: { height: 8, backgroundColor: BNG_COLORS.border, borderRadius: 4, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: BNG_COLORS.primary, borderRadius: 4 },
   projectFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: BNG_COLORS.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingTop: 16, borderTopWidth: 1, borderTopColor: BNG_COLORS.border,
   },
-  footerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  footerText: {
-    fontSize: 14,
-    color: BNG_COLORS.textSecondary,
-    fontWeight: '500',
-  },
+  footerItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  footerText: { fontSize: 14, color: BNG_COLORS.textSecondary, fontWeight: '500' },
 });

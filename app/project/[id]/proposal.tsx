@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
   ScrollView, Alert, ActivityIndicator, Platform,
@@ -9,9 +9,10 @@ import * as Sharing from 'expo-sharing';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
 import { generateProposal, GeneratedProposal } from '../../../lib/gemini';
+import { fetchProject } from '../../../lib/data';
 
 export default function ProposalScreen() {
-  const { id } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
   // Input state
@@ -20,6 +21,18 @@ export default function ProposalScreen() {
   const [projectType, setProjectType] = useState('');
   const [scopeText, setScopeText] = useState('');
   const [estimateTotal, setEstimateTotal] = useState('');
+
+  // Pre-fill from Supabase project data
+  useEffect(() => {
+    if (!id) return;
+    fetchProject(id).then(p => {
+      if (!p) return;
+      if (p.title && !clientName) setClientName(p.title);
+      if (p.address && !address) setAddress(p.address);
+      if (p.phase && !projectType) setProjectType(p.title);
+      if (p.budget && !estimateTotal) setEstimateTotal(`$${p.budget.toLocaleString()}`);
+    }).catch(() => {});
+  }, [id]);
 
   // Result state
   const [proposal, setProposal] = useState<GeneratedProposal | null>(null);

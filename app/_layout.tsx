@@ -84,6 +84,24 @@ function RootLayoutNav() {
             headerTintColor: '#fff',
           }} 
         />
+        <Stack.Screen 
+          name="add-project" 
+          options={{ 
+            presentation: 'modal',
+            title: 'New Project',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
+          name="add-event" 
+          options={{ 
+            presentation: 'modal',
+            title: 'New Event',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
       </Stack>
     </ThemeProvider>
   );

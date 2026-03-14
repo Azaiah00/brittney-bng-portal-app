@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Alert, SafeAreaView, Platform, ScrollView 
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { saveLeadOffline } from '../lib/offline';
 import { parseLeadNotes, ParsedLead } from '../lib/gemini';
@@ -40,17 +41,19 @@ export default function ScratchpadScreen() {
     try {
       await saveLeadOffline({
         name: parsedResult.name || 'Unknown',
-        phone: parsedResult.phone || '',
-        address: parsedResult.address || '',
-        project_type: parsedResult.projectType || '',
+        phone: parsedResult.phone || null,
+        email: null,
+        address: parsedResult.address || null,
+        project_type: parsedResult.projectType || null,
+        notes: notes || null,
         status: 'new' as const,
       });
 
       Alert.alert('Lead Saved', `"${parsedResult.name}" has been saved as a new lead.`, [
         { text: 'OK', onPress: () => router.back() }
       ]);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save lead.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to save lead.');
     }
   };
 
@@ -103,10 +106,25 @@ export default function ScratchpadScreen() {
         />
 
         <View style={styles.toolbar}>
-          <TouchableOpacity style={styles.toolButton}>
+          <TouchableOpacity
+            style={styles.toolButton}
+            onPress={() => Alert.alert('Voice Input', 'Voice-to-text will be available in a future update. For now, type or paste your notes.')}
+          >
             <FontAwesome name="microphone" size={18} color={BNG_COLORS.primary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.toolButton}>
+          <TouchableOpacity
+            style={styles.toolButton}
+            onPress={async () => {
+              try {
+                const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+                if (!result.canceled && result.assets[0]) {
+                  Alert.alert('Photo Captured', 'Photo-to-text extraction is coming soon. For now, type the details from the photo into the text area above.');
+                }
+              } catch {
+                Alert.alert('Camera Error', 'Could not open camera. Make sure camera permissions are granted.');
+              }
+            }}
+          >
             <FontAwesome name="camera" size={18} color={BNG_COLORS.primary} />
           </TouchableOpacity>
           <View style={styles.toolbarDivider} />

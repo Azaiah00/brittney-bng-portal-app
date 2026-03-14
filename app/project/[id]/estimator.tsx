@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, Alert, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import * as Print from 'expo-print';
@@ -6,6 +6,10 @@ import * as Sharing from 'expo-sharing';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
 import { generateEstimateItems } from '../../../lib/gemini';
+import { fetchProject, saveEstimate } from '../../../lib/data';
+import { Database } from '../../../types/database';
+
+type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
 type LineItem = {
   id: string;
@@ -23,12 +27,18 @@ const PRESET_ITEMS = [
 ];
 
 export default function EstimatorScreen() {
-  const { id } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const [items, setItems] = useState<LineItem[]>([]);
   const [service, setService] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [price, setPrice] = useState('');
   const [showPresets, setShowPresets] = useState(false);
+  const [project, setProject] = useState<ProjectRow | null>(null);
+
+  // Load real project data from Supabase
+  useEffect(() => {
+    if (id) fetchProject(id).then(p => { if (p) setProject(p); }).catch(() => {});
+  }, [id]);
 
   // AI Auto-Fill state
   const [showAIPanel, setShowAIPanel] = useState(false);
@@ -287,14 +297,14 @@ export default function EstimatorScreen() {
             </div>
             <div class="estimate-info">
               <div class="estimate-title">Project Estimate</div>
-              <div class="estimate-number">#EST-2026-001</div>
+              <div class="estimate-number">#EST-${new Date().toISOString().slice(0,10)}</div>
             </div>
           </div>
           
           <div class="client-section">
             <div class="client-label">Prepared For</div>
-            <div class="client-name">John & Jane Doe</div>
-            <div class="client-address">123 Oak Street, Richmond, VA 23220</div>
+            <div class="client-name">${project?.title || 'Client'}</div>
+            <div class="client-address">${project?.address || 'Richmond, VA'}</div>
           </div>
           
           <table>
@@ -360,8 +370,17 @@ export default function EstimatorScreen() {
     `;
 
     try {
+      // Save estimate to Supabase
+      if (id) {
+        await saveEstimate({
+          project_id: id,
+          line_items: items.map(i => ({ service: i.service, quantity: i.quantity, price: i.price })),
+          total_amount: calculateGrandTotal(),
+        }).catch(() => {}); // non-blocking
+      }
+
       const { uri } = await Print.printToFileAsync({ html });
-      
+
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
         await Sharing.shareAsync(uri, {
@@ -423,7 +442,7 @@ export default function EstimatorScreen() {
             </View>
             <View>
               <Text style={styles.clientLabel}>Estimate For</Text>
-              <Text style={styles.clientName}>Doe Kitchen Remodel</Text>
+              <Text style={styles.clientName}>{project?.title || 'Loading...'}</Text>
             </View>
           </View>
         </View>

@@ -1,7 +1,13 @@
-import React from 'react';
-import { StyleSheet, View, Text, SafeAreaView, TouchableOpacity, ScrollView, Platform, Switch } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  StyleSheet, View, Text, SafeAreaView, TouchableOpacity,
+  ScrollView, Platform, Switch, Alert, Linking,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
+import { fetchDashboardStats, DashboardStats } from '../../lib/data';
 
 const PROFILE_SECTIONS = [
   {
@@ -10,7 +16,7 @@ const PROFILE_SECTIONS = [
       { id: 'profile', icon: 'user-o', label: 'Edit Profile', hasArrow: true },
       { id: 'notifications', icon: 'bell-o', label: 'Notifications', hasToggle: true },
       { id: 'privacy', icon: 'lock', label: 'Privacy & Security', hasArrow: true },
-    ]
+    ],
   },
   {
     title: 'Business',
@@ -19,14 +25,14 @@ const PROFILE_SECTIONS = [
       { id: 'team', icon: 'users', label: 'Team Members', hasArrow: true },
       { id: 'integrations', icon: 'plug', label: 'Integrations', hasArrow: true, badge: '3' },
       { id: 'billing', icon: 'credit-card', label: 'Billing & Subscription', hasArrow: true },
-    ]
+    ],
   },
   {
     title: 'Preferences',
     items: [
       { id: 'theme', icon: 'moon-o', label: 'Dark Mode', hasToggle: true },
       { id: 'language', icon: 'globe', label: 'Language', value: 'English', hasArrow: true },
-    ]
+    ],
   },
   {
     title: 'Support',
@@ -34,25 +40,92 @@ const PROFILE_SECTIONS = [
       { id: 'help', icon: 'question-circle-o', label: 'Help Center', hasArrow: true },
       { id: 'contact', icon: 'envelope-o', label: 'Contact Support', hasArrow: true },
       { id: 'about', icon: 'info-circle', label: 'About BNG Remodel', hasArrow: true },
-    ]
-  }
+    ],
+  },
 ];
 
 export default function SettingsScreen() {
-  const [toggles, setToggles] = React.useState({
-    notifications: true,
-    theme: false,
-  });
+  const [toggles, setToggles] = React.useState({ notifications: true, theme: false });
+  const [stats, setStats] = useState<DashboardStats | null>(null);
 
   const toggleSwitch = (id: string) => {
     setToggles(prev => ({ ...prev, [id]: !prev[id as keyof typeof toggles] }));
   };
 
+  // Load real stats
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboardStats().then(setStats).catch(() => {});
+    }, [])
+  );
+
+  // ── Handlers for each settings item ──
+  const handleItemPress = (id: string) => {
+    switch (id) {
+      case 'profile':
+        Alert.alert('Edit Profile', 'Profile editing will be available in a future update.');
+        break;
+      case 'privacy':
+        Alert.alert('Privacy & Security', 'Your data is stored securely in Supabase with row-level security.');
+        break;
+      case 'templates':
+        Alert.alert('Estimate Templates', 'You can create estimates from any project. Templates coming soon.');
+        break;
+      case 'team':
+        Alert.alert('Team Members', 'Team management is coming in a future update.');
+        break;
+      case 'integrations':
+        Alert.alert('Integrations', 'Current integrations:\n\n1. Supabase (Database)\n2. Gemini AI (Smart Features)\n3. Apple Calendar (Sync)');
+        break;
+      case 'billing':
+        Alert.alert('Billing', 'BNG Remodel Pro Plan\nNo charges at this time.');
+        break;
+      case 'language':
+        Alert.alert('Language', 'Currently set to English. More languages coming soon.');
+        break;
+      case 'help':
+        Alert.alert('Help Center', 'Need help? Contact Brittney at brittany@bng.com or call support.');
+        break;
+      case 'contact':
+        Linking.openURL('mailto:brittany@bng.com?subject=BNG App Support');
+        break;
+      case 'about':
+        Alert.alert(
+          'About BNG Remodel',
+          'BNG Remodel App v1.0.0\n\nBuilt for Brittney Reader\nBNG Remodel, Richmond VA\n\nPowered by Supabase & Gemini AI'
+        );
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log Out',
+        style: 'destructive',
+        onPress: async () => {
+          await AsyncStorage.clear();
+          Alert.alert('Logged Out', 'Your session has been cleared.');
+        },
+      },
+    ]);
+  };
+
   const renderSettingItem = (item: any, isLast: boolean) => (
-    <TouchableOpacity 
-      key={item.id} 
+    <TouchableOpacity
+      key={item.id}
       style={[styles.settingItem, !isLast && styles.settingItemBorder]}
       activeOpacity={0.7}
+      onPress={() => {
+        if (item.hasToggle) {
+          toggleSwitch(item.id);
+        } else {
+          handleItemPress(item.id);
+        }
+      }}
     >
       <View style={styles.settingItemLeft}>
         <View style={styles.iconContainer}>
@@ -94,35 +167,38 @@ export default function SettingsScreen() {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarLarge}>
-            <Text style={styles.avatarText}>BW</Text>
+            <Text style={styles.avatarText}>BR</Text>
           </View>
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>Brittney Reader</Text>
-            <Text style={styles.profileRole}>Owner • BNG Remodel</Text>
+            <Text style={styles.profileRole}>Owner &bull; BNG Remodel</Text>
             <View style={styles.profileBadge}>
               <Text style={styles.profileBadgeText}>Pro Plan</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.editButton}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => handleItemPress('profile')}
+          >
             <FontAwesome name="pencil" size={16} color={BNG_COLORS.primary} />
           </TouchableOpacity>
         </View>
 
-        {/* Stats Row */}
+        {/* Stats Row -- live from Supabase */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statBoxValue}>12</Text>
+            <Text style={styles.statBoxValue}>{stats?.activeProjects ?? '-'}</Text>
             <Text style={styles.statBoxLabel}>Active Projects</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
-            <Text style={styles.statBoxValue}>48</Text>
+            <Text style={styles.statBoxValue}>{stats?.completedProjects ?? '-'}</Text>
             <Text style={styles.statBoxLabel}>Completed</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
-            <Text style={styles.statBoxValue}>4.9</Text>
-            <Text style={styles.statBoxLabel}>Rating</Text>
+            <Text style={styles.statBoxValue}>{stats?.totalLeads ?? '-'}</Text>
+            <Text style={styles.statBoxLabel}>Total Leads</Text>
           </View>
         </View>
 
@@ -131,7 +207,7 @@ export default function SettingsScreen() {
           <View key={idx} style={styles.section}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
             <View style={styles.sectionCard}>
-              {section.items.map((item: any, itemIdx: number) => 
+              {section.items.map((item: any, itemIdx: number) =>
                 renderSettingItem(item, itemIdx === section.items.length - 1)
               )}
             </View>
@@ -152,11 +228,11 @@ export default function SettingsScreen() {
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutButton} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.logoutButton} activeOpacity={0.8} onPress={handleLogout}>
           <FontAwesome name="sign-out" size={18} color={BNG_COLORS.accent} style={{ marginRight: 10 }} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
-        
+
         <View style={styles.bottomSpacing} />
       </ScrollView>
     </SafeAreaView>
@@ -164,248 +240,82 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BNG_COLORS.background,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: BNG_COLORS.text,
-    letterSpacing: -0.5,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: BNG_COLORS.textSecondary,
-    fontWeight: '500',
-  },
+  container: { flex: 1, backgroundColor: BNG_COLORS.background },
+  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 },
+  title: { fontSize: 32, fontWeight: '800', color: BNG_COLORS.text, letterSpacing: -0.5, marginBottom: 4 },
+  subtitle: { fontSize: 16, color: BNG_COLORS.textSecondary, fontWeight: '500' },
   profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: BNG_COLORS.surface,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 20,
-    borderRadius: 20,
-    ...Platform.select({
-      ios: SHADOWS.md,
-      android: {
-        elevation: 4,
-      },
-    }),
+    flexDirection: 'row', alignItems: 'center', backgroundColor: BNG_COLORS.surface,
+    marginHorizontal: 16, marginBottom: 16, padding: 20, borderRadius: 20,
+    ...Platform.select({ ios: SHADOWS.md, android: { elevation: 4 } }),
   },
   avatarLarge: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: BNG_COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
+    width: 64, height: 64, borderRadius: 32, backgroundColor: BNG_COLORS.primary,
+    alignItems: 'center', justifyContent: 'center', marginRight: 16,
   },
-  avatarText: {
-    color: '#FFF',
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  profileName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: BNG_COLORS.text,
-    marginBottom: 4,
-  },
-  profileRole: {
-    fontSize: 14,
-    color: BNG_COLORS.textSecondary,
-    marginBottom: 8,
-  },
+  avatarText: { color: '#FFF', fontSize: 24, fontWeight: '700', letterSpacing: 1 },
+  profileInfo: { flex: 1 },
+  profileName: { fontSize: 20, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 4 },
+  profileRole: { fontSize: 14, color: BNG_COLORS.textSecondary, marginBottom: 8 },
   profileBadge: {
-    backgroundColor: `${BNG_COLORS.accent}15`,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
+    backgroundColor: `${BNG_COLORS.accent}15`, paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 12, alignSelf: 'flex-start',
   },
-  profileBadgeText: {
-    color: BNG_COLORS.accent,
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  profileBadgeText: { color: BNG_COLORS.accent, fontSize: 12, fontWeight: '700' },
   editButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: BNG_COLORS.background,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 20, backgroundColor: BNG_COLORS.background,
+    alignItems: 'center', justifyContent: 'center',
   },
   statsRow: {
-    flexDirection: 'row',
-    backgroundColor: BNG_COLORS.surface,
-    marginHorizontal: 16,
-    marginBottom: 24,
-    padding: 16,
-    borderRadius: 16,
-    ...Platform.select({
-      ios: SHADOWS.sm,
-      android: {
-        elevation: 2,
-      },
-    }),
+    flexDirection: 'row', backgroundColor: BNG_COLORS.surface,
+    marginHorizontal: 16, marginBottom: 24, padding: 16, borderRadius: 16,
+    ...Platform.select({ ios: SHADOWS.sm, android: { elevation: 2 } }),
   },
-  statBox: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: BNG_COLORS.border,
-  },
-  statBoxValue: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: BNG_COLORS.primary,
-    marginBottom: 2,
-  },
-  statBoxLabel: {
-    fontSize: 12,
-    color: BNG_COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  section: {
-    marginBottom: 24,
-    paddingHorizontal: 16,
-  },
+  statBox: { flex: 1, alignItems: 'center' },
+  statDivider: { width: 1, backgroundColor: BNG_COLORS.border },
+  statBoxValue: { fontSize: 22, fontWeight: '800', color: BNG_COLORS.primary, marginBottom: 2 },
+  statBoxLabel: { fontSize: 12, color: BNG_COLORS.textSecondary, fontWeight: '500' },
+  section: { marginBottom: 24, paddingHorizontal: 16 },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: BNG_COLORS.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 12,
-    marginLeft: 8,
+    fontSize: 13, fontWeight: '700', color: BNG_COLORS.textMuted, textTransform: 'uppercase',
+    letterSpacing: 1, marginBottom: 12, marginLeft: 8,
   },
   sectionCard: {
-    backgroundColor: BNG_COLORS.surface,
-    borderRadius: 20,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: SHADOWS.sm,
-      android: {
-        elevation: 2,
-      },
-    }),
+    backgroundColor: BNG_COLORS.surface, borderRadius: 20, overflow: 'hidden',
+    ...Platform.select({ ios: SHADOWS.sm, android: { elevation: 2 } }),
   },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-  },
-  settingItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: BNG_COLORS.border,
-  },
-  settingItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  settingItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
+  settingItemBorder: { borderBottomWidth: 1, borderBottomColor: BNG_COLORS.border },
+  settingItemLeft: { flexDirection: 'row', alignItems: 'center' },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: `${BNG_COLORS.primary}10`,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+    width: 36, height: 36, borderRadius: 10, backgroundColor: `${BNG_COLORS.primary}10`,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
-  settingLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: BNG_COLORS.text,
-  },
-  settingItemRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  settingValue: {
-    fontSize: 14,
-    color: BNG_COLORS.textMuted,
-    marginRight: 8,
-  },
+  settingLabel: { fontSize: 16, fontWeight: '500', color: BNG_COLORS.text },
+  settingItemRight: { flexDirection: 'row', alignItems: 'center' },
+  settingValue: { fontSize: 14, color: BNG_COLORS.textMuted, marginRight: 8 },
   badge: {
-    backgroundColor: BNG_COLORS.accent,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
+    backgroundColor: BNG_COLORS.accent, width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center', marginRight: 8,
   },
-  badgeText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  versionSection: {
-    marginHorizontal: 16,
-    marginBottom: 24,
-  },
+  badgeText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  versionSection: { marginHorizontal: 16, marginBottom: 24 },
   logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: BNG_COLORS.surface,
-    padding: 20,
-    borderRadius: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: BNG_COLORS.surface, padding: 20, borderRadius: 16,
   },
   logoIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: BNG_COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
+    width: 48, height: 48, borderRadius: 14, backgroundColor: BNG_COLORS.primary,
+    alignItems: 'center', justifyContent: 'center', marginRight: 14,
   },
-  appName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: BNG_COLORS.text,
-    marginBottom: 2,
-  },
-  versionText: {
-    fontSize: 14,
-    color: BNG_COLORS.textMuted,
-  },
+  appName: { fontSize: 18, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 2 },
+  versionText: { fontSize: 14, color: BNG_COLORS.textMuted },
   logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 16,
-    marginTop: 8,
-    padding: 16,
-    backgroundColor: `${BNG_COLORS.accent}10`,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: `${BNG_COLORS.accent}20`,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    marginHorizontal: 16, marginTop: 8, padding: 16,
+    backgroundColor: `${BNG_COLORS.accent}10`, borderRadius: 16,
+    borderWidth: 1, borderColor: `${BNG_COLORS.accent}20`,
   },
-  logoutText: {
-    color: BNG_COLORS.accent,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  bottomSpacing: {
-    height: 40,
-  },
+  logoutText: { color: BNG_COLORS.accent, fontSize: 16, fontWeight: '700' },
+  bottomSpacing: { height: 40 },
 });

@@ -14,59 +14,77 @@ export interface Database {
           id: string
           name: string
           phone: string | null
+          email: string | null
           address: string | null
           project_type: string | null
-          status: 'new' | 'contacted' | 'converted'
+          notes: string | null
+          status: 'new' | 'contacted' | 'quoted' | 'converted'
           created_at: string
         }
         Insert: {
           id?: string
           name: string
           phone?: string | null
+          email?: string | null
           address?: string | null
           project_type?: string | null
-          status?: 'new' | 'contacted' | 'converted'
+          notes?: string | null
+          status?: 'new' | 'contacted' | 'quoted' | 'converted'
           created_at?: string
         }
         Update: {
           id?: string
           name?: string
           phone?: string | null
+          email?: string | null
           address?: string | null
           project_type?: string | null
-          status?: 'new' | 'contacted' | 'converted'
+          notes?: string | null
+          status?: 'new' | 'contacted' | 'quoted' | 'converted'
           created_at?: string
         }
       }
       projects: {
         Row: {
           id: string
-          lead_id: string
+          lead_id: string | null
           title: string
+          address: string | null
+          budget: number | null
+          phase: string | null
+          progress: number
           start_date: string | null
           walkthrough_date: string | null
           calendar_event_id: string | null
-          status: 'active' | 'completed'
+          status: 'active' | 'completed' | 'pending'
           created_at: string
         }
         Insert: {
           id?: string
-          lead_id: string
+          lead_id?: string | null
           title: string
+          address?: string | null
+          budget?: number | null
+          phase?: string | null
+          progress?: number
           start_date?: string | null
           walkthrough_date?: string | null
           calendar_event_id?: string | null
-          status?: 'active' | 'completed'
+          status?: 'active' | 'completed' | 'pending'
           created_at?: string
         }
         Update: {
           id?: string
-          lead_id?: string
+          lead_id?: string | null
           title?: string
+          address?: string | null
+          budget?: number | null
+          phase?: string | null
+          progress?: number
           start_date?: string | null
           walkthrough_date?: string | null
           calendar_event_id?: string | null
-          status?: 'active' | 'completed'
+          status?: 'active' | 'completed' | 'pending'
           created_at?: string
         }
       }
@@ -76,6 +94,7 @@ export interface Database {
           project_id: string
           note: string | null
           image_urls: string[] | null
+          author: string | null
           created_at: string
         }
         Insert: {
@@ -83,6 +102,7 @@ export interface Database {
           project_id: string
           note?: string | null
           image_urls?: string[] | null
+          author?: string | null
           created_at?: string
         }
         Update: {
@@ -90,6 +110,7 @@ export interface Database {
           project_id?: string
           note?: string | null
           image_urls?: string[] | null
+          author?: string | null
           created_at?: string
         }
       }
@@ -116,6 +137,44 @@ export interface Database {
           line_items?: Json
           total_amount?: number
           pdf_url?: string | null
+          created_at?: string
+        }
+      }
+      events: {
+        Row: {
+          id: string
+          title: string
+          description: string | null
+          event_date: string
+          start_time: string | null
+          end_time: string | null
+          event_type: 'walkthrough' | 'meeting' | 'review' | 'inspection' | 'other'
+          project_id: string | null
+          client_name: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          description?: string | null
+          event_date: string
+          start_time?: string | null
+          end_time?: string | null
+          event_type?: 'walkthrough' | 'meeting' | 'review' | 'inspection' | 'other'
+          project_id?: string | null
+          client_name?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          description?: string | null
+          event_date?: string
+          start_time?: string | null
+          end_time?: string | null
+          event_type?: 'walkthrough' | 'meeting' | 'review' | 'inspection' | 'other'
+          project_id?: string | null
+          client_name?: string | null
           created_at?: string
         }
       }

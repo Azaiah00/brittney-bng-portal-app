@@ -1,29 +1,34 @@
+// Offline lead queue with automatic Supabase sync.
+// Saves to AsyncStorage first, then syncs to Supabase when possible.
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from './supabase';
+import { createLead } from './data';
 import { Database } from '../types/database';
 
 type LeadInsert = Database['public']['Tables']['leads']['Insert'];
 
 const OFFLINE_QUEUE_KEY = '@bng_offline_leads_queue';
 
+// Save a lead -- tries Supabase first, falls back to offline queue
 export async function saveLeadOffline(lead: LeadInsert) {
   try {
+    // Try direct Supabase insert first
+    const saved = await createLead(lead);
+    return saved;
+  } catch {
+    // Supabase unavailable -- queue locally
     const existingQueueStr = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
-    const existingQueue: LeadInsert[] = existingQueueStr ? JSON.parse(existingQueueStr) : [];
-    
-    // Add a temporary ID if not present so we can track it
+    const existingQueue: (LeadInsert & { _offlineId?: string })[] =
+      existingQueueStr ? JSON.parse(existingQueueStr) : [];
+
     const leadToSave = {
       ...lead,
-      id: lead.id || Math.random().toString(36).substring(7),
-      _isOffline: true,
+      _offlineId: Math.random().toString(36).substring(7),
     };
-    
+
     existingQueue.push(leadToSave);
     await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(existingQueue));
     return leadToSave;
-  } catch (error) {
-    console.error('Error saving lead offline:', error);
-    throw error;
   }
 }
 
@@ -37,34 +42,29 @@ export async function getOfflineLeads(): Promise<LeadInsert[]> {
   }
 }
 
+// Push any queued leads to Supabase and clear them from local storage
 export async function syncOfflineLeads() {
   try {
     const queue = await getOfflineLeads();
     if (queue.length === 0) return;
 
-    const successfulSyncs: string[] = [];
+    const successfulIds: string[] = [];
 
     for (const lead of queue) {
-      // Remove temporary offline flags/ids before sending to Supabase
-      const { _isOffline, id, ...leadData } = lead as any;
-      
-      const { error } = await supabase
-        .from('leads')
-        .insert([leadData]);
-
-      if (!error) {
-        successfulSyncs.push(id);
-      } else {
+      const { _offlineId, ...leadData } = lead as any;
+      try {
+        await createLead(leadData);
+        if (_offlineId) successfulIds.push(_offlineId);
+      } catch (error) {
         console.error('Failed to sync lead:', error);
       }
     }
 
-    // Remove successful syncs from queue
-    const remainingQueue = queue.filter(
-      (lead: any) => !successfulSyncs.includes(lead.id)
+    // Keep only leads that failed to sync
+    const remaining = queue.filter(
+      (l: any) => !successfulIds.includes(l._offlineId)
     );
-    
-    await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remainingQueue));
+    await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
   } catch (error) {
     console.error('Error syncing offline leads:', error);
   }

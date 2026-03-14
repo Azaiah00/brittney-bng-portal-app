@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Platform, Image } from 'react-native';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
@@ -23,10 +23,11 @@ function TopNavBar() {
         {/* Top Row: Logo, Search, Profile */}
         <View style={styles.topRow}>
           <View style={styles.logoContainer}>
-            <View style={styles.logoIcon}>
-              <FontAwesome name="home" size={20} color="#FFF" />
-            </View>
-            <Text style={styles.logoText}>BNG <Text style={styles.logoTextHighlight}>Remodel</Text></Text>
+            <Image 
+              source={require('../../assets/images/logo-bng.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
 
           <View style={styles.searchContainer}>
@@ -146,23 +147,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  logoIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: BNG_COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  logoText: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: BNG_COLORS.primary,
-    letterSpacing: -0.5,
-  },
-  logoTextHighlight: {
-    color: BNG_COLORS.accent,
+  logoImage: {
+    width: 140,
+    height: 40,
   },
   searchContainer: {
     flex: 1,

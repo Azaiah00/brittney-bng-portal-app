@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, Alert, Platform, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, Alert, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
+import { generateEstimateItems } from '../../../lib/gemini';
 
 type LineItem = {
   id: string;
@@ -28,6 +29,42 @@ export default function EstimatorScreen() {
   const [quantity, setQuantity] = useState('1');
   const [price, setPrice] = useState('');
   const [showPresets, setShowPresets] = useState(false);
+
+  // AI Auto-Fill state
+  const [showAIPanel, setShowAIPanel] = useState(false);
+  const [aiScopeText, setAiScopeText] = useState('');
+  const [aiProjectType, setAiProjectType] = useState('');
+  const [isAILoading, setIsAILoading] = useState(false);
+  const [showAIInstructions, setShowAIInstructions] = useState(true);
+
+  const handleAIAutoFill = async () => {
+    if (!aiScopeText.trim()) {
+      Alert.alert('Error', 'Please paste the scope of work first.');
+      return;
+    }
+
+    setIsAILoading(true);
+    try {
+      const result = await generateEstimateItems(aiScopeText, aiProjectType || 'Remodel');
+      const newItems: LineItem[] = result.lineItems.map((item) => ({
+        id: Math.random().toString(),
+        service: item.service,
+        quantity: String(item.quantity),
+        price: String(item.unitPrice),
+      }));
+      setItems(prev => [...prev, ...newItems]);
+      setShowAIPanel(false);
+      setAiScopeText('');
+
+      if (result.notes) {
+        Alert.alert('AI Notes', result.notes);
+      }
+    } catch (error: any) {
+      Alert.alert('AI Error', error.message || 'Failed to generate estimate. Check your Gemini API key.');
+    } finally {
+      setIsAILoading(false);
+    }
+  };
 
   const handleAddItem = () => {
     if (!service || !price) {
@@ -390,6 +427,97 @@ export default function EstimatorScreen() {
             </View>
           </View>
         </View>
+
+        {/* AI Auto-Fill Section */}
+        {!showAIPanel ? (
+          <TouchableOpacity
+            style={styles.aiTriggerButton}
+            onPress={() => setShowAIPanel(true)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.aiTriggerLeft}>
+              <View style={styles.aiIconContainer}>
+                <FontAwesome name="magic" size={20} color="#FFF" />
+              </View>
+              <View>
+                <Text style={styles.aiTriggerTitle}>AI Auto-Fill</Text>
+                <Text style={styles.aiTriggerSubtitle}>Paste scope of work to generate items</Text>
+              </View>
+            </View>
+            <FontAwesome name="chevron-right" size={14} color={BNG_COLORS.textMuted} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.aiPanel}>
+            {showAIInstructions && (
+              <View style={styles.aiInstructionCard}>
+                <View style={styles.aiInstructionHeader}>
+                  <FontAwesome name="lightbulb-o" size={18} color={BNG_COLORS.warning} />
+                  <Text style={styles.aiInstructionTitle}>How it works</Text>
+                  <TouchableOpacity onPress={() => setShowAIInstructions(false)}>
+                    <FontAwesome name="times" size={14} color={BNG_COLORS.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.aiInstructionText}>
+                  Tap 'AI Auto-Fill' and paste the scope of work. AI will generate line items with quantities and prices based on typical contractor rates. You can edit, add, or remove any item before exporting.
+                </Text>
+              </View>
+            )}
+            {!showAIInstructions && (
+              <TouchableOpacity onPress={() => setShowAIInstructions(true)} style={styles.showHelpLink}>
+                <FontAwesome name="question-circle" size={14} color={BNG_COLORS.primary} />
+                <Text style={styles.showHelpText}>How it works</Text>
+              </TouchableOpacity>
+            )}
+
+            <Text style={styles.aiPanelTitle}>AI Auto-Fill Estimate</Text>
+
+            <TextInput
+              style={styles.aiProjectInput}
+              placeholder="Project type (e.g. Bathroom Remodel)"
+              placeholderTextColor={BNG_COLORS.textMuted}
+              value={aiProjectType}
+              onChangeText={setAiProjectType}
+            />
+
+            <TextInput
+              style={styles.aiScopeInput}
+              placeholder="Paste the full scope of work here..."
+              placeholderTextColor={BNG_COLORS.textMuted}
+              value={aiScopeText}
+              onChangeText={setAiScopeText}
+              multiline
+              numberOfLines={8}
+              textAlignVertical="top"
+            />
+
+            <View style={styles.aiActions}>
+              <TouchableOpacity
+                style={styles.aiCancelButton}
+                onPress={() => { setShowAIPanel(false); setAiScopeText(''); }}
+              >
+                <Text style={styles.aiCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.aiGenerateButton, isAILoading && { opacity: 0.7 }]}
+                onPress={handleAIAutoFill}
+                disabled={isAILoading}
+                activeOpacity={0.8}
+              >
+                {isAILoading ? (
+                  <>
+                    <ActivityIndicator color="#FFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.aiGenerateText}>Generating...</Text>
+                  </>
+                ) : (
+                  <>
+                    <FontAwesome name="magic" size={16} color="#FFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.aiGenerateText}>Generate Items</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Add Item Form */}
         <View style={styles.formCard}>
@@ -904,5 +1032,156 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: 20,
+  },
+  // AI Auto-Fill Styles
+  aiTriggerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: BNG_COLORS.surface,
+    margin: 16,
+    marginTop: 0,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: `${BNG_COLORS.primary}20`,
+    borderStyle: 'dashed',
+  },
+  aiTriggerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  aiIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: BNG_COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiTriggerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: BNG_COLORS.text,
+  },
+  aiTriggerSubtitle: {
+    fontSize: 13,
+    color: BNG_COLORS.textMuted,
+    marginTop: 2,
+  },
+  aiPanel: {
+    backgroundColor: BNG_COLORS.surface,
+    margin: 16,
+    marginTop: 0,
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: BNG_COLORS.primary,
+    ...Platform.select({
+      ios: SHADOWS.lg,
+      android: { elevation: 6 },
+    }),
+  },
+  aiInstructionCard: {
+    backgroundColor: `${BNG_COLORS.warning}10`,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: `${BNG_COLORS.warning}25`,
+  },
+  aiInstructionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  aiInstructionTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: BNG_COLORS.text,
+  },
+  aiInstructionText: {
+    fontSize: 13,
+    color: BNG_COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  showHelpLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  showHelpText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: BNG_COLORS.primary,
+  },
+  aiPanelTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: BNG_COLORS.text,
+    marginBottom: 16,
+  },
+  aiProjectInput: {
+    backgroundColor: BNG_COLORS.background,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.border,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    color: BNG_COLORS.text,
+    marginBottom: 12,
+  },
+  aiScopeInput: {
+    backgroundColor: BNG_COLORS.background,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.border,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    color: BNG_COLORS.text,
+    minHeight: 150,
+    marginBottom: 16,
+    lineHeight: 22,
+  },
+  aiActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  aiCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BNG_COLORS.background,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.border,
+  },
+  aiCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: BNG_COLORS.textSecondary,
+  },
+  aiGenerateButton: {
+    flex: 2,
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BNG_COLORS.primary,
+    ...Platform.select({
+      ios: SHADOWS.glowPrimary,
+      android: { elevation: 4 },
+    }),
+  },
+  aiGenerateText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
   },
 });

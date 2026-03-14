@@ -76,6 +76,14 @@ function RootLayoutNav() {
             headerTintColor: '#fff',
           }} 
         />
+        <Stack.Screen 
+          name="project/[id]/proposal" 
+          options={{ 
+            title: 'AI Proposal',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
       </Stack>
     </ThemeProvider>
   );

@@ -100,14 +100,24 @@ export default function ProjectTimelineScreen() {
           headerStyle: { backgroundColor: BNG_COLORS.primary },
           headerTintColor: '#fff',
           headerRight: () => (
-            <TouchableOpacity 
-              onPress={() => router.push(`/project/${id}/estimator`)}
-              style={styles.headerButton}
-              activeOpacity={0.8}
-            >
-              <FontAwesome name="calculator" size={14} color="#FFF" style={{ marginRight: 6 }} />
-              <Text style={styles.headerButtonText}>Estimate</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity 
+                onPress={() => router.push(`/project/${id}/proposal`)}
+                style={[styles.headerButton, { backgroundColor: '#FFF' }]}
+                activeOpacity={0.8}
+              >
+                <FontAwesome name="file-text" size={14} color={BNG_COLORS.primary} style={{ marginRight: 6 }} />
+                <Text style={[styles.headerButtonText, { color: BNG_COLORS.primary }]}>Proposal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={() => router.push(`/project/${id}/estimator`)}
+                style={styles.headerButton}
+                activeOpacity={0.8}
+              >
+                <FontAwesome name="calculator" size={14} color="#FFF" style={{ marginRight: 6 }} />
+                <Text style={styles.headerButtonText}>Estimate</Text>
+              </TouchableOpacity>
+            </View>
           )
         }} 
       />

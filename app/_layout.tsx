@@ -94,6 +94,24 @@ function RootLayoutNav() {
           }} 
         />
         <Stack.Screen 
+          name="add-customer" 
+          options={{ 
+            presentation: 'modal',
+            title: 'Add Customer',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
+          name="add-lead" 
+          options={{ 
+            presentation: 'modal',
+            title: 'Add Lead',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
           name="add-event" 
           options={{ 
             presentation: 'modal',

@@ -7,17 +7,17 @@ import { Tabs, usePathname, useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
 import { useBreakpoint } from '../../lib/hooks';
-import { fetchLeads, fetchProjects } from '../../lib/data';
+import { fetchLeads, fetchCustomers, fetchProjects } from '../../lib/data';
 
 const NAV_ITEMS = [
   { route: '/', label: 'Dashboard', icon: 'th-large' },
-  { route: '/leads', label: 'Leads', icon: 'users' },
+  { route: '/leads', label: 'Contacts', icon: 'users' },
   { route: '/projects', label: 'Projects', icon: 'briefcase' },
   { route: '/calendar', label: 'Calendar', icon: 'calendar' },
   { route: '/settings', label: 'Settings', icon: 'cog' },
 ];
 
-type SearchResult = { id: string; title: string; type: 'lead' | 'project'; route: string };
+type SearchResult = { id: string; title: string; type: 'lead' | 'customer' | 'project'; route: string };
 
 function TopNavBar() {
   const pathname = usePathname();
@@ -39,16 +39,25 @@ function TopNavBar() {
 
     const timer = setTimeout(async () => {
       try {
-        const [leads, projects] = await Promise.all([fetchLeads(), fetchProjects()]);
+        const [leads, customers, projects] = await Promise.all([
+          fetchLeads(),
+          fetchCustomers(),
+          fetchProjects(),
+        ]);
         const q = searchQuery.toLowerCase();
         const results: SearchResult[] = [];
 
-        leads.forEach(l => {
+        leads.forEach((l) => {
           if (l.name.toLowerCase().includes(q) || (l.project_type || '').toLowerCase().includes(q)) {
             results.push({ id: l.id, title: `${l.name} — ${l.project_type || 'Lead'}`, type: 'lead', route: '/leads' });
           }
         });
-        projects.forEach(p => {
+        customers.forEach((c) => {
+          if (c.name.toLowerCase().includes(q) || (c.project_type || '').toLowerCase().includes(q)) {
+            results.push({ id: c.id, title: `${c.name} — ${c.project_type || 'Customer'}`, type: 'customer', route: '/leads' });
+          }
+        });
+        projects.forEach((p) => {
           if (p.title.toLowerCase().includes(q) || (p.address || '').toLowerCase().includes(q)) {
             results.push({ id: p.id, title: `${p.title}`, type: 'project', route: `/project/${p.id}` });
           }
@@ -90,7 +99,7 @@ function TopNavBar() {
               <FontAwesome name="search" size={15} color={BNG_COLORS.textMuted} style={{ marginRight: 10 }} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search leads, projects..."
+                placeholder="Search contacts, projects..."
                 placeholderTextColor={BNG_COLORS.textMuted}
                 value={searchQuery}
                 onChangeText={(t) => { setSearchQuery(t); setShowSearch(true); }}
@@ -153,7 +162,7 @@ function TopNavBar() {
                 onPress={() => handleSearchSelect(item)}
               >
                 <FontAwesome
-                  name={item.type === 'lead' ? 'user' : 'briefcase'}
+                  name={item.type === 'project' ? 'briefcase' : 'user'}
                   size={14}
                   color={BNG_COLORS.primary}
                   style={{ marginRight: 10, width: 20 }}

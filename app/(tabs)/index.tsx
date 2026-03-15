@@ -23,7 +23,7 @@ export default function DashboardScreen() {
   // ── Live data ──
   const [stats, setStats] = useState<DashboardStats>({
     totalProjects: 0, activeProjects: 0, completedProjects: 0, pendingProjects: 0,
-    totalLeads: 0, newLeads: 0,
+    totalLeads: 0, newLeads: 0, totalCustomers: 0,
   });
   const [projects, setProjects] = useState<ProjectItem[]>([]);
 
@@ -77,7 +77,7 @@ export default function DashboardScreen() {
 
   // ── Derived stat cards ──
   const statCards = [
-    { label: 'Total Projects', value: String(stats.totalProjects), footer: `${stats.totalLeads} total leads`, primary: true },
+    { label: 'Total Projects', value: String(stats.totalProjects), footer: `${stats.totalCustomers} customers, ${stats.totalLeads} leads`, primary: true },
     { label: 'Active Projects', value: String(stats.activeProjects), footer: 'Currently in progress', primary: false },
     { label: 'Completed', value: String(stats.completedProjects), footer: 'Finished projects', primary: false },
     { label: 'New Leads', value: String(stats.newLeads), footer: 'Waiting for follow-up', primary: false },

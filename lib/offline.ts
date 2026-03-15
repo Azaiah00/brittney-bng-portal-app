@@ -9,7 +9,8 @@ type LeadInsert = Database['public']['Tables']['leads']['Insert'];
 
 const OFFLINE_QUEUE_KEY = '@bng_offline_leads_queue';
 
-// Save a lead -- tries Supabase first, falls back to offline queue
+// Save a lead -- tries Supabase first, falls back to offline queue.
+// LeadInsert includes lead_source_id when provided (e.g. from scratchpad).
 export async function saveLeadOffline(lead: LeadInsert) {
   try {
     // Try direct Supabase insert first

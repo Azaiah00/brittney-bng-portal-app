@@ -9,12 +9,14 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { saveLeadOffline } from '../lib/offline';
 import { parseLeadNotes, ParsedLead } from '../lib/gemini';
 import { BNG_COLORS, SHADOWS } from '../lib/theme';
+import { LeadSourcePicker } from '../components/LeadSourcePicker';
 
 export default function ScratchpadScreen() {
   const [notes, setNotes] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [parsedResult, setParsedResult] = useState<ParsedLead | null>(null);
   const [showInstructions, setShowInstructions] = useState(true);
+  const [leadSourceId, setLeadSourceId] = useState<string | null>(null);
   const router = useRouter();
 
   const handleParseWithAI = async () => {
@@ -47,6 +49,7 @@ export default function ScratchpadScreen() {
         project_type: parsedResult.projectType || null,
         notes: notes || null,
         status: 'new' as const,
+        lead_source_id: leadSourceId,
       });
 
       Alert.alert('Lead Saved', `"${parsedResult.name}" has been saved as a new lead.`, [
@@ -237,6 +240,15 @@ export default function ScratchpadScreen() {
             multiline
             numberOfLines={4}
             textAlignVertical="top"
+          />
+        </View>
+
+        {/* Lead Source (required for tracking where this lead came from) */}
+        <View style={styles.leadSourceSection}>
+          <LeadSourcePicker
+            value={leadSourceId}
+            onChange={setLeadSourceId}
+            label="Lead source"
           />
         </View>
 
@@ -544,6 +556,9 @@ const styles = StyleSheet.create({
     minHeight: 100,
     borderWidth: 1,
     borderColor: BNG_COLORS.border,
+  },
+  leadSourceSection: {
+    marginBottom: 24,
   },
   saveButton: {
     backgroundColor: BNG_COLORS.primary,

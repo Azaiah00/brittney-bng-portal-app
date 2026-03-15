@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
 import { useResponsivePadding } from '../../lib/hooks';
-import { fetchProjects } from '../../lib/data';
+import { fetchProjects, fetchLeads, fetchCustomers } from '../../lib/data';
 import { Database } from '../../types/database';
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
@@ -23,13 +23,22 @@ export default function ProjectsScreen() {
   const router = useRouter();
   const pad = useResponsivePadding();
   const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [contactNames, setContactNames] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<'all' | 'active' | 'completed' | 'pending'>('all');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
 
   const loadProjects = useCallback(async () => {
     try {
-      const data = await fetchProjects();
+      const [data, leads, customers] = await Promise.all([
+        fetchProjects(),
+        fetchLeads(),
+        fetchCustomers(),
+      ]);
       setProjects(data);
+      const names: Record<string, string> = {};
+      leads.forEach((l) => { names[l.id] = l.name; });
+      customers.forEach((c) => { names[c.id] = c.name; });
+      setContactNames(names);
     } catch { /* Supabase may not be ready */ }
   }, []);
 
@@ -45,8 +54,15 @@ export default function ProjectsScreen() {
     return `$${budget}`;
   };
 
+  const getContactName = (item: ProjectRow) => {
+    if (item.lead_id && contactNames[item.lead_id]) return contactNames[item.lead_id];
+    if (item.customer_id && contactNames[item.customer_id]) return contactNames[item.customer_id];
+    return null;
+  };
+
   const renderProjectItem = ({ item }: { item: ProjectRow }) => {
     const status = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending;
+    const contactName = getContactName(item);
 
     return (
       <TouchableOpacity
@@ -61,6 +77,9 @@ export default function ProjectsScreen() {
           <View style={styles.projectInfo}>
             <Text style={styles.projectTitle}>{item.title}</Text>
             <Text style={styles.projectAddress}>{item.address || 'No address'}</Text>
+            {contactName ? (
+              <Text style={styles.projectContact}>Contact: {contactName}</Text>
+            ) : null}
           </View>
           <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
             <FontAwesome name={status.icon as any} size={12} color={status.text} style={{ marginRight: 4 }} />
@@ -214,6 +233,7 @@ const styles = StyleSheet.create({
   projectInfo: { flex: 1 },
   projectTitle: { fontSize: 18, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 4 },
   projectAddress: { fontSize: 14, color: BNG_COLORS.textSecondary, fontWeight: '500' },
+  projectContact: { fontSize: 13, color: BNG_COLORS.primary, fontWeight: '600', marginTop: 4 },
   statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
   statusText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
   progressSection: { marginBottom: 20 },

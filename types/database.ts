@@ -9,6 +9,23 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      lead_sources: {
+        Row: {
+          id: string
+          name: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          created_at?: string
+        }
+      }
       leads: {
         Row: {
           id: string
@@ -18,6 +35,7 @@ export interface Database {
           address: string | null
           project_type: string | null
           notes: string | null
+          lead_source_id: string | null
           status: 'new' | 'contacted' | 'quoted' | 'converted'
           created_at: string
         }
@@ -29,6 +47,7 @@ export interface Database {
           address?: string | null
           project_type?: string | null
           notes?: string | null
+          lead_source_id?: string | null
           status?: 'new' | 'contacted' | 'quoted' | 'converted'
           created_at?: string
         }
@@ -40,7 +59,49 @@ export interface Database {
           address?: string | null
           project_type?: string | null
           notes?: string | null
+          lead_source_id?: string | null
           status?: 'new' | 'contacted' | 'quoted' | 'converted'
+          created_at?: string
+        }
+      }
+      customers: {
+        Row: {
+          id: string
+          name: string
+          phone: string | null
+          email: string | null
+          address: string | null
+          project_type: string | null
+          notes: string | null
+          lead_source_id: string | null
+          converted_from_lead_id: string | null
+          status: 'active' | 'completed'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          phone?: string | null
+          email?: string | null
+          address?: string | null
+          project_type?: string | null
+          notes?: string | null
+          lead_source_id?: string | null
+          converted_from_lead_id?: string | null
+          status?: 'active' | 'completed'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          phone?: string | null
+          email?: string | null
+          address?: string | null
+          project_type?: string | null
+          notes?: string | null
+          lead_source_id?: string | null
+          converted_from_lead_id?: string | null
+          status?: 'active' | 'completed'
           created_at?: string
         }
       }
@@ -48,6 +109,7 @@ export interface Database {
         Row: {
           id: string
           lead_id: string | null
+          customer_id: string | null
           title: string
           address: string | null
           budget: number | null
@@ -62,6 +124,7 @@ export interface Database {
         Insert: {
           id?: string
           lead_id?: string | null
+          customer_id?: string | null
           title: string
           address?: string | null
           budget?: number | null
@@ -76,6 +139,7 @@ export interface Database {
         Update: {
           id?: string
           lead_id?: string | null
+          customer_id?: string | null
           title?: string
           address?: string | null
           budget?: number | null

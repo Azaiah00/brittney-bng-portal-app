@@ -6,9 +6,10 @@ import {
 import { useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../lib/theme';
-import { createProject, fetchLeads } from '../lib/data';
+import { createProject, fetchLeads, fetchCustomers } from '../lib/data';
 
-type LeadOption = { id: string; name: string; address?: string | null };
+// Unified contact: lead or customer, for linking projects to who they belong to
+type ContactOption = { id: string; name: string; address?: string | null; type: 'lead' | 'customer' };
 
 export default function AddProjectScreen() {
   const router = useRouter();
@@ -17,14 +18,28 @@ export default function AddProjectScreen() {
   const [budget, setBudget] = useState('');
   const [phase, setPhase] = useState('Planning');
   const [startDate, setStartDate] = useState('');
-  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
-  const [leads, setLeads] = useState<LeadOption[]>([]);
-  const [showLeadPicker, setShowLeadPicker] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<ContactOption | null>(null);
+  const [contacts, setContacts] = useState<ContactOption[]>([]);
+  const [showContactPicker, setShowContactPicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchLeads()
-      .then((data) => setLeads(data.map(l => ({ id: l.id, name: l.name, address: l.address }))))
+    Promise.all([fetchLeads(), fetchCustomers()])
+      .then(([leadsData, customersData]) => {
+        const leadContacts: ContactOption[] = leadsData.map((l) => ({
+          id: l.id,
+          name: l.name,
+          address: l.address ?? null,
+          type: 'lead',
+        }));
+        const customerContacts: ContactOption[] = customersData.map((c) => ({
+          id: c.id,
+          name: c.name,
+          address: c.address ?? null,
+          type: 'customer',
+        }));
+        setContacts([...leadContacts, ...customerContacts]);
+      })
       .catch(() => {});
   }, []);
 
@@ -43,7 +58,8 @@ export default function AddProjectScreen() {
         budget: budget ? parseFloat(budget.replace(/[^0-9.]/g, '')) : null,
         phase,
         start_date: startDate || null,
-        lead_id: selectedLeadId,
+        lead_id: selectedContact?.type === 'lead' ? selectedContact.id : null,
+        customer_id: selectedContact?.type === 'customer' ? selectedContact.id : null,
         status: 'active',
         progress: 0,
       });
@@ -56,8 +72,6 @@ export default function AddProjectScreen() {
       setSaving(false);
     }
   };
-
-  const selectedLead = leads.find(l => l.id === selectedLeadId);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -83,39 +97,47 @@ export default function AddProjectScreen() {
             onChangeText={setTitle}
           />
 
-          {/* Link to Lead */}
-          <Text style={styles.label}>Link to Lead (optional)</Text>
+          {/* Link to Contact (lead or customer) — connects project to who it's for */}
+          <Text style={styles.label}>Link to Contact (optional)</Text>
           <TouchableOpacity
             style={styles.input}
-            onPress={() => setShowLeadPicker(!showLeadPicker)}
+            onPress={() => setShowContactPicker(!showContactPicker)}
           >
-            <Text style={{ color: selectedLead ? BNG_COLORS.text : BNG_COLORS.textMuted, fontSize: 16 }}>
-              {selectedLead ? selectedLead.name : 'Select a lead...'}
+            <Text style={{ color: selectedContact ? BNG_COLORS.text : BNG_COLORS.textMuted, fontSize: 16 }}>
+              {selectedContact
+                ? `${selectedContact.name} — ${selectedContact.type === 'lead' ? 'Lead' : 'Customer'}`
+                : 'Select a contact (lead or customer)...'}
             </Text>
           </TouchableOpacity>
-          {showLeadPicker && (
+          {showContactPicker && (
             <View style={styles.pickerList}>
               <TouchableOpacity
                 style={styles.pickerItem}
-                onPress={() => { setSelectedLeadId(null); setShowLeadPicker(false); }}
+                onPress={() => { setSelectedContact(null); setShowContactPicker(false); }}
               >
-                <Text style={styles.pickerText}>-- None --</Text>
+                <Text style={styles.pickerText}>— None —</Text>
               </TouchableOpacity>
-              {leads.map(l => (
+              {contacts.map((c) => (
                 <TouchableOpacity
-                  key={l.id}
-                  style={[styles.pickerItem, selectedLeadId === l.id && styles.pickerItemActive]}
+                  key={`${c.type}-${c.id}`}
+                  style={[
+                    styles.pickerItem,
+                    selectedContact?.type === c.type && selectedContact?.id === c.id && styles.pickerItemActive,
+                  ]}
                   onPress={() => {
-                    setSelectedLeadId(l.id);
-                    if (l.address && !address) setAddress(l.address);
-                    setShowLeadPicker(false);
+                    setSelectedContact(c);
+                    if (c.address && !address) setAddress(c.address);
+                    setShowContactPicker(false);
                   }}
                 >
-                  <Text style={styles.pickerText}>{l.name}</Text>
+                  <Text style={styles.pickerText}>{c.name}</Text>
+                  <Text style={styles.pickerSubtext}>{c.type === 'lead' ? 'Lead' : 'Customer'}</Text>
                 </TouchableOpacity>
               ))}
-              {leads.length === 0 && (
-                <Text style={styles.pickerEmpty}>No leads yet. Create one from the Scratchpad.</Text>
+              {contacts.length === 0 && (
+                <Text style={styles.pickerEmpty}>
+                  No contacts yet. Add leads (Scratchpad) or customers (Contacts tab).
+                </Text>
               )}
             </View>
           )}
@@ -226,7 +248,8 @@ const styles = StyleSheet.create({
   },
   pickerItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: BNG_COLORS.border },
   pickerItemActive: { backgroundColor: `${BNG_COLORS.primary}15` },
-  pickerText: { fontSize: 15, color: BNG_COLORS.text },
+  pickerText: { fontSize: 15, color: BNG_COLORS.text, fontWeight: '600' },
+  pickerSubtext: { fontSize: 12, color: BNG_COLORS.textMuted, marginTop: 2 },
   pickerEmpty: { padding: 14, fontSize: 14, color: BNG_COLORS.textMuted, fontStyle: 'italic' },
   saveBtn: {
     backgroundColor: BNG_COLORS.primary, flexDirection: 'row', alignItems: 'center',

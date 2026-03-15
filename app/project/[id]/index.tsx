@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
-import { fetchProject, fetchLogs, createLog } from '../../../lib/data';
+import { fetchProject, fetchLogs, createLog, fetchLeads, fetchCustomers } from '../../../lib/data';
 import { Database } from '../../../types/database';
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
@@ -19,17 +19,30 @@ export default function ProjectTimelineScreen() {
   const router = useRouter();
   const [project, setProject] = useState<ProjectRow | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [contactName, setContactName] = useState<string | null>(null);
   const [newNote, setNewNote] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [logFilter, setLogFilter] = useState<'all' | 'mine'>('all');
 
-  // Load project and logs from Supabase
+  // Load project, logs, and linked contact name from Supabase
   const loadData = useCallback(async () => {
     if (!id) return;
     try {
-      const [proj, logsData] = await Promise.all([fetchProject(id), fetchLogs(id)]);
-      if (proj) setProject(proj);
+      const [proj, logsData, leads, customers] = await Promise.all([
+        fetchProject(id),
+        fetchLogs(id),
+        fetchLeads(),
+        fetchCustomers(),
+      ]);
+      if (proj) {
+        setProject(proj);
+        const names: Record<string, string> = {};
+        leads.forEach((l) => { names[l.id] = l.name; });
+        customers.forEach((c) => { names[c.id] = c.name; });
+        const name = proj.lead_id ? names[proj.lead_id] : proj.customer_id ? names[proj.customer_id] : null;
+        setContactName(name ?? null);
+      }
       setLogs(logsData);
     } catch { /* Supabase may not be ready */ }
   }, [id]);
@@ -153,6 +166,9 @@ export default function ProjectTimelineScreen() {
           <View style={styles.projectInfo}>
             <Text style={styles.projectTitle}>{project?.title || 'Loading...'}</Text>
             <Text style={styles.projectAddress}>{project?.address || 'No address'}</Text>
+            {contactName ? (
+              <Text style={styles.projectContact}>Contact: {contactName}</Text>
+            ) : null}
           </View>
           <View style={styles.progressCircle}>
             <Text style={styles.progressText}>{project?.progress ?? 0}%</Text>
@@ -272,6 +288,7 @@ const styles = StyleSheet.create({
   projectInfo: { flex: 1 },
   projectTitle: { fontSize: 19, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 4 },
   projectAddress: { fontSize: 14, color: BNG_COLORS.textSecondary, fontWeight: '500' },
+  projectContact: { fontSize: 13, color: BNG_COLORS.primary, fontWeight: '600', marginTop: 4 },
   progressCircle: {
     width: 56, height: 56, borderRadius: 28, borderWidth: 4, borderColor: BNG_COLORS.primary,
     alignItems: 'center', justifyContent: 'center',

@@ -126,11 +126,27 @@ export async function convertLeadToCustomer(leadId: string): Promise<CustomerRow
     .single();
   if (leadErr || !lead) throw new Error('Lead not found');
 
+  // Build name from first_name + last_name, or fall back to legacy name field
+  const l = lead as LeadRow & { first_name?: string | null; last_name?: string | null };
+  const fullName =
+    l.first_name && l.last_name
+      ? `${l.first_name} ${l.last_name}`.trim()
+      : (lead.name || 'Unknown');
+
   const customer = await createCustomer({
-    name: lead.name,
+    name: fullName,
+    first_name: l.first_name || null,
+    last_name: l.last_name || null,
+    company_name: (l as any).company_name ?? null,
     phone: lead.phone,
     email: lead.email,
+    alternate_email: (l as any).alternate_email ?? null,
     address: lead.address,
+    address_line_1: (l as any).address_line_1 ?? null,
+    address_line_2: (l as any).address_line_2 ?? null,
+    city: (l as any).city ?? null,
+    state: (l as any).state ?? null,
+    zip_code: (l as any).zip_code ?? null,
     project_type: lead.project_type,
     notes: lead.notes,
     lead_source_id: lead.lead_source_id,

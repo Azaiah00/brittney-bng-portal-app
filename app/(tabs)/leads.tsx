@@ -271,9 +271,41 @@ export default function LeadsScreen() {
   const showCustomerDetail = viewMode === 'customers' && selectedCustomer;
   const showDetail = showLeadDetail || showCustomerDetail;
 
-  const renderContactCard = (phone: string | null, email: string | null, address: string | null) => (
+  // Format address from structured parts when address string is empty
+  const formatAddress = (c: LeadRow | CustomerRow): string | null => {
+    if (c.address?.trim()) return c.address;
+    const parts = [
+      (c as any).address_line_1?.trim(),
+      (c as any).address_line_2?.trim(),
+      [(c as any).city?.trim(), (c as any).state?.trim(), (c as any).zip_code?.trim()]
+        .filter(Boolean)
+        .join(', '),
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : null;
+  };
+
+  const renderContactCard = (
+    phone: string | null,
+    email: string | null,
+    address: string | null,
+    opts?: { alternateEmail?: string | null; companyName?: string | null }
+  ) => (
     <View style={styles.contactCard}>
       <Text style={styles.contactCardTitle}>Contact Info</Text>
+      {opts?.companyName ? (
+        <>
+          <View style={styles.contactRow}>
+            <View style={styles.contactIconContainer}>
+              <FontAwesome name="building" size={16} color={BNG_COLORS.primary} />
+            </View>
+            <View>
+              <Text style={styles.contactLabel}>Company</Text>
+              <Text style={styles.contactValue}>{opts.companyName}</Text>
+            </View>
+          </View>
+          <View style={styles.divider} />
+        </>
+      ) : null}
       <View style={styles.contactRow}>
         <View style={styles.contactIconContainer}>
           <FontAwesome name="phone" size={16} color={BNG_COLORS.primary} />
@@ -293,6 +325,20 @@ export default function LeadsScreen() {
           <Text style={styles.contactValue}>{email || 'Not provided'}</Text>
         </View>
       </View>
+      {opts?.alternateEmail ? (
+        <>
+          <View style={styles.divider} />
+          <View style={styles.contactRow}>
+            <View style={styles.contactIconContainer}>
+              <FontAwesome name="envelope" size={16} color={BNG_COLORS.primary} />
+            </View>
+            <View>
+              <Text style={styles.contactLabel}>Alternate Email</Text>
+              <Text style={styles.contactValue}>{opts.alternateEmail}</Text>
+            </View>
+          </View>
+        </>
+      ) : null}
       {address ? (
         <>
           <View style={styles.divider} />
@@ -347,7 +393,12 @@ export default function LeadsScreen() {
             </View>
           </View>
 
-          {renderContactCard(selectedLead!.phone, selectedLead!.email, selectedLead!.address ?? null)}
+          {renderContactCard(
+            selectedLead!.phone,
+            selectedLead!.email,
+            formatAddress(selectedLead!),
+            { alternateEmail: (selectedLead! as any).alternate_email, companyName: (selectedLead! as any).company_name }
+          )}
 
           <View style={styles.actionsCard}>
             {selectedLead!.status !== 'converted' && (
@@ -399,7 +450,15 @@ export default function LeadsScreen() {
             <Text style={styles.detailSourceLabel}>Source: {getSourceName(selectedCustomer!.lead_source_id)}</Text>
           </View>
 
-          {renderContactCard(selectedCustomer!.phone, selectedCustomer!.email, selectedCustomer!.address ?? null)}
+          {renderContactCard(
+            selectedCustomer!.phone,
+            selectedCustomer!.email,
+            formatAddress(selectedCustomer!),
+            {
+              alternateEmail: selectedCustomer!.alternate_email ?? null,
+              companyName: selectedCustomer!.company_name ?? null,
+            }
+          )}
 
           <View style={styles.actionsCard}>
             <TouchableOpacity style={styles.primaryAction} onPress={() => router.push('/add-project')}>

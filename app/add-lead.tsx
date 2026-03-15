@@ -15,41 +15,78 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { BNG_COLORS, SHADOWS } from '../lib/theme';
+import { BNG_COLORS } from '../lib/theme';
 import { saveLeadOffline } from '../lib/offline';
 import { LeadSourcePicker } from '../components/LeadSourcePicker';
 
+// Build full address string from parts for storage/display
+function buildAddress(parts: {
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+}): string | null {
+  const { addressLine1, addressLine2, city, state, zipCode } = parts;
+  const partsArr = [
+    addressLine1.trim(),
+    addressLine2.trim(),
+    [city.trim(), state.trim(), zipCode.trim()].filter(Boolean).join(', '),
+  ].filter(Boolean);
+  return partsArr.length > 0 ? partsArr.join(', ') : null;
+}
+
 export default function AddLeadScreen() {
   const router = useRouter();
-  const [name, setName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [address, setAddress] = useState('');
+  const [alternateEmail, setAlternateEmail] = useState('');
+  const [addressLine1, setAddressLine1] = useState('');
+  const [addressLine2, setAddressLine2] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [zipCode, setZipCode] = useState('');
   const [projectType, setProjectType] = useState('');
   const [notes, setNotes] = useState('');
   const [leadSourceId, setLeadSourceId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      Alert.alert('Required', 'Please enter the lead name.');
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    if (!fn || !ln) {
+      Alert.alert('Required', 'Please enter both first name and last name.');
       return;
     }
+
+    const fullName = `${fn} ${ln}`.trim();
+    const address = buildAddress({ addressLine1, addressLine2, city, state, zipCode });
 
     setSaving(true);
     try {
       await saveLeadOffline({
-        name: trimmedName,
+        name: fullName,
+        first_name: fn,
+        last_name: ln,
+        company_name: companyName.trim() || null,
         phone: phone.trim() || null,
         email: email.trim() || null,
-        address: address.trim() || null,
+        alternate_email: alternateEmail.trim() || null,
+        address,
+        address_line_1: addressLine1.trim() || null,
+        address_line_2: addressLine2.trim() || null,
+        city: city.trim() || null,
+        state: state.trim() || null,
+        zip_code: zipCode.trim() || null,
         project_type: projectType.trim() || null,
         notes: notes.trim() || null,
         lead_source_id: leadSourceId,
         status: 'new',
       });
-      Alert.alert('Lead Added', `"${trimmedName}" has been added as a new lead.`, [
+      Alert.alert('Lead Added', `"${fullName}" has been added as a new lead.`, [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (e: any) {
@@ -58,14 +95,6 @@ export default function AddLeadScreen() {
       setSaving(false);
     }
   };
-
-  const fields: { value: string; setValue: (s: string) => void; label: string; placeholder: string; icon: string }[] = [
-    { value: name, setValue: setName, label: 'Name', placeholder: 'Full name', icon: 'user' },
-    { value: phone, setValue: setPhone, label: 'Phone', placeholder: 'Phone number', icon: 'phone' },
-    { value: email, setValue: setEmail, label: 'Email', placeholder: 'Email address', icon: 'envelope-o' },
-    { value: address, setValue: setAddress, label: 'Address', placeholder: 'Property address', icon: 'map-marker' },
-    { value: projectType, setValue: setProjectType, label: 'Project Type', placeholder: 'e.g. Kitchen Remodel', icon: 'home' },
-  ];
 
   return (
     <KeyboardAvoidingView
@@ -79,26 +108,210 @@ export default function AddLeadScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {fields.map((f) => (
-          <View key={f.label} style={styles.fieldWrap}>
-            <Text style={styles.label}>{f.label}</Text>
+        {/* Company name (optional) */}
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Company Name (optional)</Text>
+          <View style={styles.inputRow}>
+            <View style={styles.iconWrap}>
+              <FontAwesome name="building" size={16} color={BNG_COLORS.primary} />
+            </View>
+            <TextInput
+              style={styles.input}
+              value={companyName}
+              onChangeText={setCompanyName}
+              placeholder="Company or business name"
+              placeholderTextColor={BNG_COLORS.textMuted}
+              autoCapitalize="words"
+            />
+          </View>
+        </View>
+
+        {/* First name & Last name */}
+        <View style={styles.nameRow}>
+          <View style={[styles.fieldWrap, { flex: 1 }]}>
+            <Text style={styles.label}>First Name *</Text>
             <View style={styles.inputRow}>
               <View style={styles.iconWrap}>
-                <FontAwesome name={f.icon as any} size={16} color={BNG_COLORS.primary} />
+                <FontAwesome name="user" size={16} color={BNG_COLORS.primary} />
               </View>
               <TextInput
                 style={styles.input}
-                value={f.value}
-                onChangeText={f.setValue}
-                placeholder={f.placeholder}
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder="First name"
                 placeholderTextColor={BNG_COLORS.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
+                autoCapitalize="words"
               />
             </View>
           </View>
-        ))}
+          <View style={[styles.fieldWrap, { flex: 1 }]}>
+            <Text style={styles.label}>Last Name *</Text>
+            <View style={styles.inputRow}>
+              <View style={styles.iconWrap}>
+                <FontAwesome name="user" size={16} color={BNG_COLORS.primary} />
+              </View>
+              <TextInput
+                style={styles.input}
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder="Last name"
+                placeholderTextColor={BNG_COLORS.textMuted}
+                autoCapitalize="words"
+              />
+            </View>
+          </View>
+        </View>
 
+        {/* Phone */}
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Phone</Text>
+          <View style={styles.inputRow}>
+            <View style={styles.iconWrap}>
+              <FontAwesome name="phone" size={16} color={BNG_COLORS.primary} />
+            </View>
+            <TextInput
+              style={styles.input}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Phone number"
+              placeholderTextColor={BNG_COLORS.textMuted}
+              keyboardType="phone-pad"
+            />
+          </View>
+        </View>
+
+        {/* Email & Alternate email */}
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Email</Text>
+          <View style={styles.inputRow}>
+            <View style={styles.iconWrap}>
+              <FontAwesome name="envelope-o" size={16} color={BNG_COLORS.primary} />
+            </View>
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Primary email"
+              placeholderTextColor={BNG_COLORS.textMuted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
+        </View>
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Alternate Email (optional)</Text>
+          <View style={styles.inputRow}>
+            <View style={styles.iconWrap}>
+              <FontAwesome name="envelope" size={16} color={BNG_COLORS.primary} />
+            </View>
+            <TextInput
+              style={styles.input}
+              value={alternateEmail}
+              onChangeText={setAlternateEmail}
+              placeholder="Secondary email"
+              placeholderTextColor={BNG_COLORS.textMuted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
+        </View>
+
+        {/* Address section */}
+        <Text style={styles.sectionLabel}>Address</Text>
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Address Line 1</Text>
+          <View style={styles.inputRow}>
+            <View style={styles.iconWrap}>
+              <FontAwesome name="map-marker" size={16} color={BNG_COLORS.primary} />
+            </View>
+            <TextInput
+              style={styles.input}
+              value={addressLine1}
+              onChangeText={setAddressLine1}
+              placeholder="Street address"
+              placeholderTextColor={BNG_COLORS.textMuted}
+              autoCapitalize="words"
+            />
+          </View>
+        </View>
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Address Line 2 (optional)</Text>
+          <View style={styles.inputRow}>
+            <View style={[styles.iconWrap, { opacity: 0.6 }]}>
+              <FontAwesome name="map-marker" size={16} color={BNG_COLORS.primary} />
+            </View>
+            <TextInput
+              style={styles.input}
+              value={addressLine2}
+              onChangeText={setAddressLine2}
+              placeholder="Apt, suite, unit, etc."
+              placeholderTextColor={BNG_COLORS.textMuted}
+              autoCapitalize="words"
+            />
+          </View>
+        </View>
+        <View style={styles.addressRow}>
+          <View style={[styles.fieldWrap, { flex: 2 }]}>
+            <Text style={styles.label}>City</Text>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, { paddingLeft: 14 }]}
+                value={city}
+                onChangeText={setCity}
+                placeholder="City"
+                placeholderTextColor={BNG_COLORS.textMuted}
+                autoCapitalize="words"
+              />
+            </View>
+          </View>
+          <View style={[styles.fieldWrap, { flex: 1 }]}>
+            <Text style={styles.label}>State</Text>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, { paddingLeft: 14 }]}
+                value={state}
+                onChangeText={setState}
+                placeholder="State"
+                placeholderTextColor={BNG_COLORS.textMuted}
+                autoCapitalize="characters"
+                maxLength={2}
+              />
+            </View>
+          </View>
+          <View style={[styles.fieldWrap, { flex: 1 }]}>
+            <Text style={styles.label}>Zip</Text>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, { paddingLeft: 14 }]}
+                value={zipCode}
+                onChangeText={setZipCode}
+                placeholder="Zip"
+                placeholderTextColor={BNG_COLORS.textMuted}
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Project type */}
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Project Type</Text>
+          <View style={styles.inputRow}>
+            <View style={styles.iconWrap}>
+              <FontAwesome name="home" size={16} color={BNG_COLORS.primary} />
+            </View>
+            <TextInput
+              style={styles.input}
+              value={projectType}
+              onChangeText={setProjectType}
+              placeholder="e.g. Kitchen Remodel"
+              placeholderTextColor={BNG_COLORS.textMuted}
+              autoCapitalize="words"
+            />
+          </View>
+        </View>
+
+        {/* Notes */}
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Notes</Text>
           <TextInput
@@ -144,6 +357,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 8,
   },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: BNG_COLORS.text,
+    marginBottom: 12,
+    marginTop: 8,
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -151,7 +371,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: BNG_COLORS.border,
-    ...Platform.select({ ios: SHADOWS.sm, android: { elevation: 2 } }),
+    ...Platform.select({ ios: { shadowOpacity: 0.06, shadowRadius: 4 }, android: { elevation: 2 } }),
   },
   iconWrap: {
     width: 44,
@@ -167,6 +387,8 @@ const styles = StyleSheet.create({
     color: BNG_COLORS.text,
     fontWeight: '500',
   },
+  nameRow: { flexDirection: 'row', gap: 12 },
+  addressRow: { flexDirection: 'row', gap: 12 },
   notesInput: {
     minHeight: 88,
     paddingTop: 14,
@@ -186,7 +408,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginTop: 12,
     ...Platform.select({
-      ios: SHADOWS.glowPrimary,
+      ios: { shadowColor: BNG_COLORS.primary, shadowOpacity: 0.3, shadowRadius: 8 },
       android: { elevation: 6 },
     }),
   },

@@ -30,9 +30,18 @@ export interface Database {
         Row: {
           id: string
           name: string
+          first_name: string | null
+          last_name: string | null
+          company_name: string | null
           phone: string | null
           email: string | null
+          alternate_email: string | null
           address: string | null
+          address_line_1: string | null
+          address_line_2: string | null
+          city: string | null
+          state: string | null
+          zip_code: string | null
           project_type: string | null
           notes: string | null
           lead_source_id: string | null
@@ -42,9 +51,18 @@ export interface Database {
         Insert: {
           id?: string
           name: string
+          first_name?: string | null
+          last_name?: string | null
+          company_name?: string | null
           phone?: string | null
           email?: string | null
+          alternate_email?: string | null
           address?: string | null
+          address_line_1?: string | null
+          address_line_2?: string | null
+          city?: string | null
+          state?: string | null
+          zip_code?: string | null
           project_type?: string | null
           notes?: string | null
           lead_source_id?: string | null
@@ -54,9 +72,18 @@ export interface Database {
         Update: {
           id?: string
           name?: string
+          first_name?: string | null
+          last_name?: string | null
+          company_name?: string | null
           phone?: string | null
           email?: string | null
+          alternate_email?: string | null
           address?: string | null
+          address_line_1?: string | null
+          address_line_2?: string | null
+          city?: string | null
+          state?: string | null
+          zip_code?: string | null
           project_type?: string | null
           notes?: string | null
           lead_source_id?: string | null
@@ -68,9 +95,18 @@ export interface Database {
         Row: {
           id: string
           name: string
+          first_name: string | null
+          last_name: string | null
+          company_name: string | null
           phone: string | null
           email: string | null
+          alternate_email: string | null
           address: string | null
+          address_line_1: string | null
+          address_line_2: string | null
+          city: string | null
+          state: string | null
+          zip_code: string | null
           project_type: string | null
           notes: string | null
           lead_source_id: string | null
@@ -81,9 +117,18 @@ export interface Database {
         Insert: {
           id?: string
           name: string
+          first_name?: string | null
+          last_name?: string | null
+          company_name?: string | null
           phone?: string | null
           email?: string | null
+          alternate_email?: string | null
           address?: string | null
+          address_line_1?: string | null
+          address_line_2?: string | null
+          city?: string | null
+          state?: string | null
+          zip_code?: string | null
           project_type?: string | null
           notes?: string | null
           lead_source_id?: string | null
@@ -94,9 +139,18 @@ export interface Database {
         Update: {
           id?: string
           name?: string
+          first_name?: string | null
+          last_name?: string | null
+          company_name?: string | null
           phone?: string | null
           email?: string | null
+          alternate_email?: string | null
           address?: string | null
+          address_line_1?: string | null
+          address_line_2?: string | null
+          city?: string | null
+          state?: string | null
+          zip_code?: string | null
           project_type?: string | null
           notes?: string | null
           lead_source_id?: string | null

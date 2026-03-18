@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
-import { fetchProject, fetchLogs, createLog, fetchLeads, fetchCustomers, deleteProject } from '../../../lib/data';
+import { fetchProject, fetchLogs, createLog, fetchLeads, fetchCustomers } from '../../../lib/data';
 import { Database } from '../../../types/database';
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];

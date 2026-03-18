@@ -113,7 +113,7 @@ export default function EditProjectScreen() {
         onPress: async () => {
           try {
             await deleteProject(id!);
-            router.replace('/(tabs)' as any);
+            router.replace('/' as any);
           } catch {
             Alert.alert('Error', 'Could not delete project.');
           }

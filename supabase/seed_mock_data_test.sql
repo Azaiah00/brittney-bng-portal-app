@@ -41,19 +41,39 @@ DROP POLICY IF EXISTS "bng_anon_estimates" ON estimates;
 CREATE POLICY "bng_anon_estimates" ON estimates
   FOR ALL TO anon USING (true) WITH CHECK (true);
 
--- Events table (calendar) — only if table exists
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'events') THEN
-    EXECUTE 'ALTER TABLE events ENABLE ROW LEVEL SECURITY';
-    EXECUTE 'DROP POLICY IF EXISTS bng_anon_events ON events';
-    EXECUTE 'CREATE POLICY bng_anon_events ON events FOR ALL TO anon USING (true) WITH CHECK (true)';
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "bng_anon_proposals" ON proposals;
+CREATE POLICY "bng_anon_proposals" ON proposals
+  FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "bng_anon_lead_sources" ON lead_sources;
+CREATE POLICY "bng_anon_lead_sources" ON lead_sources
+  FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "bng_anon_customers" ON customers;
+CREATE POLICY "bng_anon_customers" ON customers
+  FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- -----------------------------------------------------------------------------
--- PART 2: Schema columns (safe if already applied)
+-- PART 2: Schema columns & tables (safe if already applied)
 -- -----------------------------------------------------------------------------
+
+-- Events table (calendar) — create if it doesn't exist yet
+CREATE TABLE IF NOT EXISTS events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title TEXT NOT NULL,
+    description TEXT,
+    event_date DATE NOT NULL,
+    start_time TEXT,
+    end_time TEXT,
+    event_type TEXT NOT NULL DEFAULT 'other' CHECK (event_type IN ('walkthrough', 'meeting', 'review', 'inspection', 'other')),
+    project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+    client_name TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "bng_anon_events" ON events;
+CREATE POLICY "bng_anon_events" ON events
+  FOR ALL TO anon USING (true) WITH CHECK (true);
 
 ALTER TABLE subcontractors ADD COLUMN IF NOT EXISTS company_name TEXT;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS company_name TEXT;
@@ -80,12 +100,7 @@ DELETE FROM checklists;
 DELETE FROM logs;
 DELETE FROM estimates;
 DELETE FROM proposals;
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'events') THEN
-    DELETE FROM events;
-  END IF;
-END $$;
+DELETE FROM events;
 DELETE FROM projects;
 DELETE FROM customers;
 DELETE FROM leads;
@@ -274,17 +289,12 @@ INSERT INTO proposals (
     'draft'
   );
 
--- Calendar events (only if events table exists — wrapped)
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'events') THEN
-    INSERT INTO events (title, description, event_date, start_time, end_time, event_type, project_id, client_name) VALUES
-      ('Walkthrough – Williams (test)', 'Initial walkthrough and scope. (test)', '2025-03-15', '09:00', '10:30', 'walkthrough', 'e0000001-0001-4000-8000-000000000001', 'Sarah Williams (test)'),
-      ('Inspection – Smith (test)', 'Permit inspection. (test)', '2025-03-20', '14:00', '15:00', 'inspection', 'e0000001-0001-4000-8000-000000000002', 'Jane Smith (test)'),
-      ('Sub walkthrough – Chen basement (test)', 'Electrical and plumbing review. (test)', '2025-03-22', '08:00', '11:00', 'review', 'e0000001-0001-4000-8000-000000000003', 'Pat Chen (test)'),
-      ('Client meeting – Rivera (test)', 'Addition scope review. (test)', '2025-03-25', '13:00', '14:00', 'meeting', NULL, 'Alex Rivera (test)');
-  END IF;
-END $$;
+-- Calendar events
+INSERT INTO events (title, description, event_date, start_time, end_time, event_type, project_id, client_name) VALUES
+  ('Walkthrough – Williams (test)', 'Initial walkthrough and scope. (test)', '2025-03-15', '09:00', '10:30', 'walkthrough', 'e0000001-0001-4000-8000-000000000001', 'Sarah Williams (test)'),
+  ('Inspection – Smith (test)', 'Permit inspection. (test)', '2025-03-20', '14:00', '15:00', 'inspection', 'e0000001-0001-4000-8000-000000000002', 'Jane Smith (test)'),
+  ('Sub walkthrough – Chen basement (test)', 'Electrical and plumbing review. (test)', '2025-03-22', '08:00', '11:00', 'review', 'e0000001-0001-4000-8000-000000000003', 'Pat Chen (test)'),
+  ('Client meeting – Rivera (test)', 'Addition scope review. (test)', '2025-03-25', '13:00', '14:00', 'meeting', NULL, 'Alex Rivera (test)');
 
 -- =============================================================================
 -- After run: refresh Crew, Contacts, Projects, Calendar, open each project for

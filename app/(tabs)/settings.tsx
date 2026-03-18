@@ -84,10 +84,10 @@ export default function SettingsScreen() {
         Alert.alert('Language', 'Currently set to English. More languages coming soon.');
         break;
       case 'help':
-        Alert.alert('Help Center', 'Need help? Contact Brittney at services@bngremodel.com or call support.');
+        Alert.alert('Help Center', 'Need help? Contact Brittney at bngremodel@gmail.com or call support.');
         break;
       case 'contact':
-        Linking.openURL('mailto:services@bngremodel.com?subject=BNG App Support');
+        Linking.openURL('mailto:bngremodel@gmail.com?subject=BNG App Support');
         break;
       case 'about':
         Alert.alert(

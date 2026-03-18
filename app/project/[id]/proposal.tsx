@@ -1,60 +1,157 @@
-import React, { useState, useEffect } from 'react';
+// Proposal / Contract Generator
+// Two modes: Manual (default) and AI Assist (optional).
+// Both produce a professional proposal + BNG standard contract appended as PDF.
+
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
   ScrollView, Alert, ActivityIndicator, Platform,
 } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
-import { generateProposal, GeneratedProposal } from '../../../lib/gemini';
-import { fetchProject } from '../../../lib/data';
+import { fetchProject, fetchEstimates, fetchLeads, fetchCustomers, saveProposal } from '../../../lib/data';
+import { generateContractProposal, ContractLineItem } from '../../../lib/gemini';
+import { BNG_CONTRACT_HTML } from '../../../lib/contract-template';
+import { DatePickerField } from '../../../components/DatePickerField';
+import { CurrencyInput } from '../../../components/CurrencyInput';
+
+// ── Line item type used in local state ──
+interface LineItem {
+  id: string;
+  service: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+const TAX_RATE = 0.06;
+const newId = () => Math.random().toString(36).slice(2, 9);
 
 export default function ProposalScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
 
-  // Input state
+  // ── Mode: manual (default) or ai ──
+  const [mode, setMode] = useState<'manual' | 'ai'>('manual');
+
+  // ── Form state ──
   const [clientName, setClientName] = useState('');
-  const [address, setAddress] = useState('');
+  const [clientAddress, setClientAddress] = useState('');
   const [projectType, setProjectType] = useState('');
-  const [scopeText, setScopeText] = useState('');
-  const [estimateTotal, setEstimateTotal] = useState('');
+  const [scopeOfWork, setScopeOfWork] = useState('');
+  const [lineItems, setLineItems] = useState<LineItem[]>([
+    { id: newId(), service: '', quantity: 1, unitPrice: 0 },
+  ]);
+  const [includeTax, setIncludeTax] = useState(true);
+  const [startDate, setStartDate] = useState('');
+  const [completionDate, setCompletionDate] = useState('');
+  const [specialConditions, setSpecialConditions] = useState('');
 
-  // Pre-fill from Supabase project data
+  // ── AI state ──
+  const [aiScopeText, setAiScopeText] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // ── Preview / saving state ──
+  const [showPreview, setShowPreview] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // ── Pre-fill from project + contact data ──
   useEffect(() => {
     if (!id) return;
-    fetchProject(id).then(p => {
-      if (!p) return;
-      if (p.title && !clientName) setClientName(p.title);
-      if (p.address && !address) setAddress(p.address);
-      if (p.phase && !projectType) setProjectType(p.title);
-      if (p.budget && !estimateTotal) setEstimateTotal(`$${p.budget.toLocaleString()}`);
-    }).catch(() => {});
+    (async () => {
+      try {
+        const [project, leads, customers] = await Promise.all([
+          fetchProject(id),
+          fetchLeads(),
+          fetchCustomers(),
+        ]);
+        if (!project) return;
+
+        setProjectType(project.title || '');
+        setClientAddress(project.address || '');
+
+        // Resolve contact name from lead_id or customer_id
+        if (project.lead_id) {
+          const lead = leads.find((l) => l.id === project.lead_id);
+          if (lead) setClientName(lead.name);
+        } else if (project.customer_id) {
+          const cust = customers.find((c) => c.id === project.customer_id);
+          if (cust) setClientName(cust.name);
+        }
+
+        // Pre-fill line items from most recent estimate if one exists
+        const estimates = await fetchEstimates(id);
+        if (estimates.length > 0) {
+          const est = estimates[0];
+          const items = est.line_items as any[];
+          if (Array.isArray(items) && items.length > 0) {
+            setLineItems(
+              items.map((li: any) => ({
+                id: newId(),
+                service: li.service || '',
+                quantity: li.quantity || 1,
+                unitPrice: li.price || li.unitPrice || 0,
+              }))
+            );
+          }
+        }
+      } catch { /* project may not exist yet */ }
+    })();
   }, [id]);
 
-  // Result state
-  const [proposal, setProposal] = useState<GeneratedProposal | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [showInstructions, setShowInstructions] = useState(true);
+  // ── Calculated totals ──
+  const subtotal = lineItems.reduce((sum, li) => sum + li.quantity * li.unitPrice, 0);
+  const tax = includeTax ? subtotal * TAX_RATE : 0;
+  const total = subtotal + tax;
 
-  const handleGenerate = async () => {
-    if (!scopeText.trim()) {
-      Alert.alert('Error', 'Please paste the scope of work.');
+  // ── BNG payment schedule (30 / 40 / 30 split) ──
+  const deposit = total * 0.3;
+  const midpoint = total * 0.4;
+  const finalPayment = total * 0.3;
+
+  // ── Line item helpers ──
+  const addLineItem = () => setLineItems((prev) => [...prev, { id: newId(), service: '', quantity: 1, unitPrice: 0 }]);
+  const removeLineItem = (itemId: string) => setLineItems((prev) => prev.filter((li) => li.id !== itemId));
+  const updateLineItem = (itemId: string, field: keyof LineItem, value: string | number) => {
+    setLineItems((prev) => prev.map((li) => (li.id === itemId ? { ...li, [field]: value } : li)));
+  };
+
+  const formatCurrency = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // ── AI generation handler ──
+  const handleAiGenerate = async () => {
+    if (!aiScopeText.trim()) {
+      Alert.alert('Required', 'Paste or type the scope of work / job notes.');
       return;
     }
-
     setIsGenerating(true);
     try {
-      const result = await generateProposal({
+      const result = await generateContractProposal({
         clientName: clientName || 'Valued Client',
-        address: address || 'TBD',
+        address: clientAddress || 'TBD',
         projectType: projectType || 'Home Remodel',
-        scopeText,
-        estimateTotal: estimateTotal || undefined,
+        scopeText: aiScopeText,
+        estimateTotal: subtotal > 0 ? subtotal : undefined,
       });
-      setProposal(result);
+
+      // Populate form fields with AI result
+      setScopeOfWork(result.scopeOfWork);
+      setLineItems(
+        result.lineItems.map((li: ContractLineItem) => ({
+          id: newId(),
+          service: li.service,
+          quantity: li.quantity,
+          unitPrice: li.unitPrice,
+        }))
+      );
+      if (result.startDate) setStartDate(result.startDate);
+      if (result.completionDate) setCompletionDate(result.completionDate);
+      if (result.specialConditions) setSpecialConditions(result.specialConditions);
+
+      // Switch to manual mode so user can review/edit the populated fields
+      setMode('manual');
+      Alert.alert('AI Complete', 'Proposal fields have been populated. Review and edit below, then preview or export.');
     } catch (error: any) {
       Alert.alert('AI Error', error.message || 'Failed to generate proposal.');
     } finally {
@@ -62,232 +159,210 @@ export default function ProposalScreen() {
     }
   };
 
-  const handleExportPDF = async () => {
-    if (!proposal) return;
+  // ── Save to Supabase ──
+  const handleSave = async () => {
+    if (!id) return;
+    setIsSaving(true);
+    try {
+      await saveProposal({
+        project_id: id,
+        client_name: clientName || null,
+        client_address: clientAddress || null,
+        scope_of_work: scopeOfWork || null,
+        line_items: lineItems.map((li) => ({ service: li.service, quantity: li.quantity, unitPrice: li.unitPrice })),
+        subtotal,
+        tax,
+        total_amount: total,
+        payment_schedule: {
+          deposit: { label: '30% Deposit', amount: deposit },
+          midpoint: { label: '40% at Halfway', amount: midpoint },
+          final: { label: '30% on Completion', amount: finalPayment },
+        },
+        start_date: startDate || null,
+        completion_date: completionDate || null,
+        special_conditions: specialConditions || null,
+        status: 'draft',
+      });
+      Alert.alert('Saved', 'Proposal saved as draft.');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to save proposal.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
+  // ── Build PDF HTML ──
+  const buildPdfHtml = () => {
     const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-    const scopeHTML = proposal.scopeOfWork.map(section => `
-      <div class="scope-section">
-        <h3>${section.section}</h3>
-        <ul>
-          ${section.items.map(item => `<li>${item}</li>`).join('')}
-        </ul>
-      </div>
-    `).join('');
+    const lineItemsHTML = lineItems
+      .filter((li) => li.service.trim())
+      .map(
+        (li) => `
+        <tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-size:13px;color:#1E293B;">${li.service}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-size:13px;color:#475569;text-align:center;">${li.quantity}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-size:13px;color:#475569;text-align:right;">${formatCurrency(li.unitPrice)}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-size:13px;color:#1E293B;text-align:right;font-weight:600;">${formatCurrency(li.quantity * li.unitPrice)}</td>
+        </tr>`
+      )
+      .join('');
 
-    const exclusionsHTML = proposal.exclusions.map(e => `<li>${e}</li>`).join('');
+    return `<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; padding:48px; color:#1E293B; line-height:1.6; }
+  .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:28px; border-bottom:3px solid #1E3A8A; margin-bottom:36px; }
+  .logo { font-size:28px; font-weight:800; color:#1E3A8A; letter-spacing:-1px; }
+  .logo span { color:#C53030; }
+  .logo-sub { font-size:12px; color:#64748B; margin-top:4px; }
+  .doc-info { text-align:right; }
+  .doc-type { font-size:22px; font-weight:700; color:#1E3A8A; margin-bottom:6px; }
+  .doc-date { font-size:13px; color:#64748B; }
+  .client-box { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px; padding:20px; margin-bottom:32px; }
+  .client-label { font-size:10px; text-transform:uppercase; letter-spacing:1.5px; color:#94A3B8; margin-bottom:6px; }
+  .client-name { font-size:20px; font-weight:700; color:#0F172A; margin-bottom:2px; }
+  .client-addr { font-size:14px; color:#64748B; }
+  .section-title { font-size:18px; font-weight:700; color:#1E3A8A; margin-bottom:14px; padding-bottom:6px; border-bottom:2px solid #E2E8F0; margin-top:32px; }
+  .scope-text { font-size:13px; color:#475569; line-height:1.8; white-space:pre-wrap; margin-bottom:24px; }
+  table { width:100%; border-collapse:collapse; margin-bottom:16px; }
+  th { background:#1E3A8A; color:#FFF; padding:10px 12px; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; }
+  th:first-child { border-radius:6px 0 0 0; text-align:left; }
+  th:last-child { border-radius:0 6px 0 0; }
+  .totals-row td { padding:8px 12px; font-size:14px; }
+  .total-final td { font-size:18px; font-weight:800; color:#1E3A8A; border-top:2px solid #1E3A8A; padding-top:12px; }
+  .payment-box { background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px; padding:20px; margin-bottom:24px; }
+  .payment-row { display:flex; justify-content:space-between; margin-bottom:8px; font-size:14px; color:#475569; }
+  .payment-row strong { color:#1E293B; }
+  .note-text { font-size:12px; color:#64748B; margin-top:4px; }
+  .timeline-text { font-size:13px; color:#475569; line-height:1.7; margin-bottom:24px; }
+  .conditions-text { font-size:13px; color:#475569; line-height:1.7; margin-bottom:24px; }
+  .contract-section { margin-top:48px; padding-top:32px; border-top:3px solid #1E3A8A; }
+  .sig-section { margin-top:56px; display:flex; justify-content:space-between; gap:48px; }
+  .sig-box { flex:1; }
+  .sig-line { border-bottom:1px solid #94A3B8; height:48px; margin-bottom:6px; }
+  .sig-label { font-size:11px; color:#64748B; }
+  .footer { text-align:center; margin-top:48px; padding-top:16px; border-top:1px solid #E2E8F0; color:#94A3B8; font-size:12px; }
+  .footer strong { color:#1E3A8A; }
+  @media print { body { padding:24px; } }
+</style>
+</head>
+<body>
 
-    const html = `
-      <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              padding: 48px;
-              color: #1E293B;
-              line-height: 1.6;
-            }
-            .header {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              padding-bottom: 32px;
-              border-bottom: 3px solid #1E3A8A;
-              margin-bottom: 40px;
-            }
-            .logo-section { }
-            .logo {
-              font-size: 28px;
-              font-weight: 800;
-              color: #1E3A8A;
-              letter-spacing: -1px;
-            }
-            .logo span { color: #C53030; }
-            .logo-subtitle {
-              font-size: 13px;
-              color: #64748B;
-              margin-top: 4px;
-            }
-            .doc-info { text-align: right; }
-            .doc-type {
-              font-size: 24px;
-              font-weight: 700;
-              color: #1E3A8A;
-              margin-bottom: 8px;
-            }
-            .doc-date { font-size: 14px; color: #64748B; }
-            .client-box {
-              background: #F8FAFC;
-              border: 1px solid #E2E8F0;
-              border-radius: 12px;
-              padding: 24px;
-              margin-bottom: 36px;
-            }
-            .client-label {
-              font-size: 11px;
-              text-transform: uppercase;
-              letter-spacing: 1.5px;
-              color: #94A3B8;
-              margin-bottom: 8px;
-            }
-            .client-name {
-              font-size: 22px;
-              font-weight: 700;
-              color: #0F172A;
-              margin-bottom: 4px;
-            }
-            .client-address { font-size: 15px; color: #64748B; }
-            .intro {
-              font-size: 15px;
-              color: #475569;
-              line-height: 1.7;
-              margin-bottom: 36px;
-              padding: 20px;
-              background: #F8FAFC;
-              border-left: 4px solid #1E3A8A;
-              border-radius: 0 8px 8px 0;
-            }
-            .section-title {
-              font-size: 20px;
-              font-weight: 700;
-              color: #1E3A8A;
-              margin-bottom: 16px;
-              padding-bottom: 8px;
-              border-bottom: 2px solid #E2E8F0;
-            }
-            .scope-section { margin-bottom: 24px; }
-            .scope-section h3 {
-              font-size: 16px;
-              font-weight: 700;
-              color: #0F172A;
-              margin-bottom: 12px;
-              padding-left: 12px;
-              border-left: 3px solid #C53030;
-            }
-            .scope-section ul {
-              padding-left: 24px;
-              margin-bottom: 16px;
-            }
-            .scope-section li {
-              margin-bottom: 8px;
-              color: #475569;
-              font-size: 14px;
-            }
-            .info-block {
-              margin-bottom: 32px;
-            }
-            .info-block p, .info-block li {
-              font-size: 14px;
-              color: #475569;
-              margin-bottom: 6px;
-            }
-            .info-block ul { padding-left: 24px; }
-            .signature-section {
-              margin-top: 60px;
-              display: flex;
-              justify-content: space-between;
-              gap: 48px;
-            }
-            .signature-box { flex: 1; }
-            .signature-line {
-              border-bottom: 1px solid #94A3B8;
-              height: 50px;
-              margin-bottom: 8px;
-            }
-            .signature-label { font-size: 12px; color: #64748B; }
-            .footer {
-              text-align: center;
-              margin-top: 60px;
-              padding-top: 20px;
-              border-top: 1px solid #E2E8F0;
-              color: #94A3B8;
-              font-size: 13px;
-            }
-            .footer strong { color: #1E3A8A; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div class="logo-section">
-              <div class="logo">BNG <span>Remodel</span></div>
-              <div class="logo-subtitle">Licensed & Insured General Contractor</div>
-            </div>
-            <div class="doc-info">
-              <div class="doc-type">Project Proposal</div>
-              <div class="doc-date">${today}</div>
-            </div>
-          </div>
+<!-- Header -->
+<div class="header">
+  <div>
+    <div class="logo">BNG <span>Remodel</span></div>
+    <div class="logo-sub">Licensed & Insured General Contractor — Richmond, VA</div>
+  </div>
+  <div class="doc-info">
+    <div class="doc-type">Proposal & Contract</div>
+    <div class="doc-date">${today}</div>
+  </div>
+</div>
 
-          <div class="client-box">
-            <div class="client-label">Prepared For</div>
-            <div class="client-name">${clientName || 'Valued Client'}</div>
-            <div class="client-address">${address || ''}</div>
-          </div>
+<!-- Client -->
+<div class="client-box">
+  <div class="client-label">Prepared For</div>
+  <div class="client-name">${clientName || 'Valued Client'}</div>
+  <div class="client-addr">${clientAddress || ''}</div>
+</div>
 
-          <div class="intro">${proposal.companyIntro}</div>
+<!-- Scope of Work -->
+<div class="section-title">Scope of Work</div>
+<div class="scope-text">${(scopeOfWork || '').replace(/\n/g, '<br>')}</div>
 
-          <div class="section-title">Scope of Work</div>
-          ${scopeHTML}
+<!-- Line Items Table -->
+<div class="section-title">Cost Breakdown</div>
+<table>
+  <thead>
+    <tr>
+      <th style="text-align:left;">Service</th>
+      <th style="text-align:center;">Qty</th>
+      <th style="text-align:right;">Unit Price</th>
+      <th style="text-align:right;">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${lineItemsHTML}
+    <tr class="totals-row">
+      <td colspan="3" style="text-align:right;color:#64748B;padding-right:12px;">Subtotal</td>
+      <td style="text-align:right;font-weight:600;">${formatCurrency(subtotal)}</td>
+    </tr>
+    ${includeTax ? `
+    <tr class="totals-row">
+      <td colspan="3" style="text-align:right;color:#64748B;padding-right:12px;">Tax (6%)</td>
+      <td style="text-align:right;">${formatCurrency(tax)}</td>
+    </tr>` : ''}
+    <tr class="total-final">
+      <td colspan="3" style="text-align:right;padding-right:12px;">Total</td>
+      <td style="text-align:right;">${formatCurrency(total)}</td>
+    </tr>
+  </tbody>
+</table>
 
-          <div class="info-block">
-            <div class="section-title">Project Timeline</div>
-            <p>${proposal.timeline}</p>
-          </div>
+<!-- Payment Schedule -->
+<div class="section-title">Payment Schedule</div>
+<div class="payment-box">
+  <div class="payment-row"><span>30% Deposit (due to schedule project)</span><strong>${formatCurrency(deposit)}</strong></div>
+  <div class="payment-row"><span>40% at Project Halfway Point</span><strong>${formatCurrency(midpoint)}</strong></div>
+  <div class="payment-row"><span>30% Balance Upon Completion</span><strong>${formatCurrency(finalPayment)}</strong></div>
+  <div class="note-text">We accept cash, cashier's check, wire transfer, and credit/debit card. Wire transfers are subject to a $35 fee. Card payments are subject to a 3.5% processing fee.</div>
+</div>
 
-          ${estimateTotal ? `
-          <div class="info-block">
-            <div class="section-title">Project Investment</div>
-            <p style="font-size: 22px; font-weight: 800; color: #1E3A8A;">Total: ${estimateTotal}</p>
-          </div>
-          ` : ''}
+<!-- Timeline -->
+${startDate || completionDate || scopeOfWork ? `
+<div class="section-title">Project Timeline</div>
+<div class="timeline-text">
+  ${startDate ? `<strong>Estimated Start:</strong> ${startDate}<br>` : ''}
+  ${completionDate ? `<strong>Estimated Completion:</strong> ${completionDate}<br>` : ''}
+</div>
+` : ''}
 
-          <div class="info-block">
-            <div class="section-title">Payment Terms</div>
-            <p>${proposal.paymentTerms}</p>
-          </div>
+<!-- Special Conditions -->
+${specialConditions ? `
+<div class="section-title">Special Conditions</div>
+<div class="conditions-text">${specialConditions.replace(/\n/g, '<br>')}</div>
+` : ''}
 
-          <div class="info-block">
-            <div class="section-title">Exclusions</div>
-            <ul>${exclusionsHTML}</ul>
-          </div>
+<!-- Standard Contract Terms -->
+<div class="contract-section">
+  ${BNG_CONTRACT_HTML}
+</div>
 
-          <div class="info-block">
-            <div class="section-title">Warranty</div>
-            <p>${proposal.warranty}</p>
-          </div>
+<!-- Signatures -->
+<div class="sig-section">
+  <div class="sig-box">
+    <div class="sig-line"></div>
+    <div class="sig-label">Brittney Reader, BNG Remodel — Date</div>
+  </div>
+  <div class="sig-box">
+    <div class="sig-line"></div>
+    <div class="sig-label">Client Signature — Date</div>
+  </div>
+</div>
 
-          <div class="signature-section">
-            <div class="signature-box">
-              <div class="signature-line"></div>
-              <div class="signature-label">Brittney Reader, BNG Remodel — Date</div>
-            </div>
-            <div class="signature-box">
-              <div class="signature-line"></div>
-              <div class="signature-label">Client Signature — Date</div>
-            </div>
-          </div>
+<div class="footer">
+  <strong>BNG Remodel</strong> — Richmond, Virginia<br>
+  Thank you for the opportunity to serve you!
+</div>
 
-          <div class="footer">
-            <strong>BNG Remodel</strong> — Richmond, Virginia<br>
-            Thank you for the opportunity to serve you!
-          </div>
-        </body>
-      </html>
-    `;
+</body>
+</html>`;
+  };
 
+  // ── Export PDF ──
+  const handleExportPDF = async () => {
     try {
+      const html = buildPdfHtml();
       const { uri } = await Print.printToFileAsync({ html });
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Share Proposal PDF',
-        });
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share Proposal PDF' });
       } else {
-        Alert.alert('Success', `PDF generated at: ${uri}`);
+        Alert.alert('PDF Generated', `File saved at: ${uri}`);
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to generate PDF.');
@@ -295,472 +370,351 @@ export default function ProposalScreen() {
     }
   };
 
-  // ---------- Input Form View ----------
-  const renderInputForm = () => (
-    <>
-      {showInstructions && (
-        <View style={styles.instructionCard}>
-          <View style={styles.instructionHeader}>
-            <FontAwesome name="lightbulb-o" size={20} color={BNG_COLORS.warning} />
-            <Text style={styles.instructionTitle}>How it works</Text>
-            <TouchableOpacity onPress={() => setShowInstructions(false)}>
-              <FontAwesome name="times" size={16} color={BNG_COLORS.textMuted} />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.instructionText}>
-            Paste the full job description or scope of work. AI will create a professional proposal with sections for scope, timeline, pricing, payment terms, and warranty. Edit any section, then tap 'Export PDF' to share with your client.
-          </Text>
-        </View>
-      )}
-      {!showInstructions && (
-        <TouchableOpacity onPress={() => setShowInstructions(true)} style={styles.showHelp}>
-          <FontAwesome name="question-circle" size={14} color={BNG_COLORS.primary} />
-          <Text style={styles.showHelpText}>How it works</Text>
-        </TouchableOpacity>
-      )}
-
-      <View style={styles.formCard}>
-        <Text style={styles.formTitle}>Project Details</Text>
-
-        <View style={styles.fieldRow}>
-          <View style={[styles.fieldCol, { marginRight: 12 }]}>
-            <Text style={styles.fieldLabel}>Client Name</Text>
-            <TextInput style={styles.fieldInput} value={clientName} onChangeText={setClientName}
-              placeholder="e.g. John Doe" placeholderTextColor={BNG_COLORS.textMuted} />
-          </View>
-          <View style={styles.fieldCol}>
-            <Text style={styles.fieldLabel}>Project Type</Text>
-            <TextInput style={styles.fieldInput} value={projectType} onChangeText={setProjectType}
-              placeholder="e.g. Bathroom Remodel" placeholderTextColor={BNG_COLORS.textMuted} />
-          </View>
-        </View>
-
-        <Text style={styles.fieldLabel}>Property Address</Text>
-        <TextInput style={styles.fieldInput} value={address} onChangeText={setAddress}
-          placeholder="e.g. 1209 Howard Ave, Richmond VA" placeholderTextColor={BNG_COLORS.textMuted} />
-
-        <Text style={styles.fieldLabel}>Estimate Total (optional)</Text>
-        <TextInput style={styles.fieldInput} value={estimateTotal} onChangeText={setEstimateTotal}
-          placeholder="e.g. $28,500" placeholderTextColor={BNG_COLORS.textMuted} />
-      </View>
-
-      <View style={styles.formCard}>
-        <Text style={styles.formTitle}>Scope of Work</Text>
-        <TextInput
-          style={styles.scopeInput}
-          value={scopeText}
-          onChangeText={setScopeText}
-          placeholder={"Paste the full job description or scope of work here...\n\nExample:\n🛁 Bathroom Remodel – 1209 Howard Avenue\nReplace all fixtures and finishes\nInstall exhaust system with light..."}
-          placeholderTextColor={BNG_COLORS.textMuted}
-          multiline
-          numberOfLines={12}
-          textAlignVertical="top"
-        />
-      </View>
-
+  // ── Render: Mode Tabs ──
+  const renderModeTabs = () => (
+    <View style={styles.modeContainer}>
       <TouchableOpacity
-        style={[styles.generateButton, isGenerating && { opacity: 0.7 }]}
-        onPress={handleGenerate}
+        style={[styles.modeTab, mode === 'manual' && styles.modeTabActive]}
+        onPress={() => setMode('manual')}
+      >
+        <FontAwesome name="pencil" size={14} color={mode === 'manual' ? '#FFF' : BNG_COLORS.textSecondary} style={{ marginRight: 6 }} />
+        <Text style={[styles.modeTabText, mode === 'manual' && styles.modeTabTextActive]}>Manual</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.modeTab, mode === 'ai' && styles.modeTabActive]}
+        onPress={() => setMode('ai')}
+      >
+        <FontAwesome name="magic" size={14} color={mode === 'ai' ? '#FFF' : BNG_COLORS.textSecondary} style={{ marginRight: 6 }} />
+        <Text style={[styles.modeTabText, mode === 'ai' && styles.modeTabTextActive]}>AI Assist</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // ── Render: AI Assist view ──
+  const renderAiAssist = () => (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>AI Proposal Generator</Text>
+      <Text style={styles.cardSubtitle}>Paste job notes, scope, or a description. AI will generate scope, line items, pricing, and timeline.</Text>
+      <TextInput
+        style={styles.scopeInput}
+        value={aiScopeText}
+        onChangeText={setAiScopeText}
+        placeholder={"Paste the full job description or scope here...\n\nExample:\nBathroom Remodel – 1209 Howard Ave\nReplace all fixtures, install exhaust, new LED lighting, tile floor and shower walls..."}
+        placeholderTextColor={BNG_COLORS.textMuted}
+        multiline
+        numberOfLines={10}
+        textAlignVertical="top"
+      />
+      <TouchableOpacity
+        style={[styles.aiButton, isGenerating && { opacity: 0.7 }]}
+        onPress={handleAiGenerate}
         disabled={isGenerating}
         activeOpacity={0.8}
       >
         {isGenerating ? (
           <>
             <ActivityIndicator color="#FFF" style={{ marginRight: 10 }} />
-            <Text style={styles.generateButtonText}>Generating Proposal...</Text>
+            <Text style={styles.aiButtonText}>Generating Proposal...</Text>
           </>
         ) : (
           <>
-            <FontAwesome name="file-text" size={20} color="#FFF" style={{ marginRight: 10 }} />
-            <Text style={styles.generateButtonText}>Generate Proposal</Text>
+            <FontAwesome name="magic" size={18} color="#FFF" style={{ marginRight: 10 }} />
+            <Text style={styles.aiButtonText}>Generate with AI</Text>
           </>
         )}
       </TouchableOpacity>
+    </View>
+  );
+
+  // ── Render: Manual form ──
+  const renderManualForm = () => (
+    <>
+      {/* Client Info */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Client Info</Text>
+        <View style={styles.row}>
+          <View style={[styles.fieldWrap, { flex: 1, marginRight: 12 }]}>
+            <Text style={styles.label}>Client Name</Text>
+            <TextInput style={styles.input} value={clientName} onChangeText={setClientName} placeholder="Full name" placeholderTextColor={BNG_COLORS.textMuted} />
+          </View>
+          <View style={[styles.fieldWrap, { flex: 1 }]}>
+            <Text style={styles.label}>Project Type</Text>
+            <TextInput style={styles.input} value={projectType} onChangeText={setProjectType} placeholder="e.g. Kitchen Remodel" placeholderTextColor={BNG_COLORS.textMuted} />
+          </View>
+        </View>
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Property Address</Text>
+          <TextInput style={styles.input} value={clientAddress} onChangeText={setClientAddress} placeholder="Street address" placeholderTextColor={BNG_COLORS.textMuted} />
+        </View>
+      </View>
+
+      {/* Scope of Work */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Scope of Work</Text>
+        <TextInput
+          style={styles.scopeInput}
+          value={scopeOfWork}
+          onChangeText={setScopeOfWork}
+          placeholder="Describe everything included in this project..."
+          placeholderTextColor={BNG_COLORS.textMuted}
+          multiline
+          numberOfLines={8}
+          textAlignVertical="top"
+        />
+      </View>
+
+      {/* Line Items */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Line Items</Text>
+        {lineItems.map((li, idx) => (
+          <View key={li.id} style={styles.lineItemRow}>
+            <View style={{ flex: 2, marginRight: 8 }}>
+              {idx === 0 && <Text style={styles.label}>Service</Text>}
+              <TextInput
+                style={styles.input}
+                value={li.service}
+                onChangeText={(t) => updateLineItem(li.id, 'service', t)}
+                placeholder="Service name"
+                placeholderTextColor={BNG_COLORS.textMuted}
+              />
+            </View>
+            <View style={{ flex: 0.6, marginRight: 8 }}>
+              {idx === 0 && <Text style={styles.label}>Qty</Text>}
+              <TextInput
+                style={styles.input}
+                value={String(li.quantity)}
+                onChangeText={(t) => updateLineItem(li.id, 'quantity', parseInt(t) || 0)}
+                keyboardType="numeric"
+                placeholderTextColor={BNG_COLORS.textMuted}
+              />
+            </View>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              {idx === 0 && <Text style={styles.label}>Unit Price</Text>}
+              <CurrencyInput
+                value={String(li.unitPrice)}
+                onChangeText={(t) => updateLineItem(li.id, 'unitPrice', parseFloat(t) || 0)}
+                placeholder="$0.00"
+                style={styles.input}
+              />
+            </View>
+            <TouchableOpacity style={styles.removeBtn} onPress={() => removeLineItem(li.id)}>
+              <FontAwesome name="trash-o" size={16} color={BNG_COLORS.accent} />
+            </TouchableOpacity>
+          </View>
+        ))}
+        <TouchableOpacity style={styles.addItemBtn} onPress={addLineItem}>
+          <FontAwesome name="plus" size={14} color={BNG_COLORS.primary} style={{ marginRight: 8 }} />
+          <Text style={styles.addItemText}>Add Line Item</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Totals */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Pricing</Text>
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>Subtotal</Text>
+          <Text style={styles.totalValue}>{formatCurrency(subtotal)}</Text>
+        </View>
+        <TouchableOpacity style={styles.taxToggle} onPress={() => setIncludeTax(!includeTax)}>
+          <FontAwesome name={includeTax ? 'check-square-o' : 'square-o'} size={18} color={BNG_COLORS.primary} style={{ marginRight: 8 }} />
+          <Text style={styles.taxToggleText}>Include 6% Tax ({formatCurrency(tax)})</Text>
+        </TouchableOpacity>
+        <View style={[styles.totalRow, styles.grandTotalRow]}>
+          <Text style={styles.grandTotalLabel}>Total</Text>
+          <Text style={styles.grandTotalValue}>{formatCurrency(total)}</Text>
+        </View>
+        <View style={styles.paymentPreview}>
+          <Text style={styles.paymentPreviewTitle}>Payment Schedule (30/40/30)</Text>
+          <Text style={styles.paymentPreviewLine}>30% Deposit: {formatCurrency(deposit)}</Text>
+          <Text style={styles.paymentPreviewLine}>40% at Halfway: {formatCurrency(midpoint)}</Text>
+          <Text style={styles.paymentPreviewLine}>30% on Completion: {formatCurrency(finalPayment)}</Text>
+        </View>
+      </View>
+
+      {/* Timeline */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Timeline</Text>
+        <View style={styles.row}>
+          <View style={[styles.fieldWrap, { flex: 1, marginRight: 12 }]}>
+            <DatePickerField value={startDate} onChange={setStartDate} label="Start Date" />
+          </View>
+          <View style={[styles.fieldWrap, { flex: 1 }]}>
+            <DatePickerField value={completionDate} onChange={setCompletionDate} label="Completion Date" />
+          </View>
+        </View>
+      </View>
+
+      {/* Special Conditions */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Special Conditions (optional)</Text>
+        <TextInput
+          style={styles.scopeInput}
+          value={specialConditions}
+          onChangeText={setSpecialConditions}
+          placeholder="Any conditions specific to this project..."
+          placeholderTextColor={BNG_COLORS.textMuted}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+        />
+      </View>
+
+      {/* Contract note */}
+      <View style={styles.contractNote}>
+        <FontAwesome name="file-text-o" size={16} color={BNG_COLORS.primary} style={{ marginRight: 10 }} />
+        <Text style={styles.contractNoteText}>
+          BNG Remodel's standard contract terms will be automatically appended to the PDF.
+        </Text>
+      </View>
     </>
   );
 
-  // ---------- Proposal Preview View ----------
-  const renderProposalPreview = () => {
-    if (!proposal) return null;
-
-    return (
-      <>
-        <View style={styles.successBanner}>
-          <FontAwesome name="check-circle" size={24} color={BNG_COLORS.success} />
-          <View style={{ flex: 1, marginLeft: 14 }}>
-            <Text style={styles.successTitle}>Proposal Ready</Text>
-            <Text style={styles.successSubtitle}>Review, edit any section, then export to PDF.</Text>
-          </View>
-        </View>
-
-        {/* Company Intro */}
-        <View style={styles.previewCard}>
-          <Text style={styles.previewSectionTitle}>Introduction</Text>
-          <TextInput
-            style={styles.previewTextInput}
-            value={proposal.companyIntro}
-            onChangeText={(t) => setProposal({ ...proposal, companyIntro: t })}
-            multiline
-          />
-        </View>
-
-        {/* Scope of Work */}
-        {proposal.scopeOfWork.map((section, idx) => (
-          <View key={idx} style={styles.previewCard}>
-            <View style={styles.scopeHeader}>
-              <View style={styles.scopeAccent} />
-              <TextInput
-                style={styles.scopeSectionTitle}
-                value={section.section}
-                onChangeText={(t) => {
-                  const updated = [...proposal.scopeOfWork];
-                  updated[idx] = { ...updated[idx], section: t };
-                  setProposal({ ...proposal, scopeOfWork: updated });
-                }}
-              />
-            </View>
-            {section.items.map((item, iIdx) => (
-              <View key={iIdx} style={styles.scopeItemRow}>
-                <Text style={styles.bullet}>•</Text>
-                <TextInput
-                  style={styles.scopeItemInput}
-                  value={item}
-                  onChangeText={(t) => {
-                    const updated = [...proposal.scopeOfWork];
-                    const items = [...updated[idx].items];
-                    items[iIdx] = t;
-                    updated[idx] = { ...updated[idx], items };
-                    setProposal({ ...proposal, scopeOfWork: updated });
-                  }}
-                  multiline
-                />
-              </View>
-            ))}
-          </View>
-        ))}
-
-        {/* Timeline */}
-        <View style={styles.previewCard}>
-          <Text style={styles.previewSectionTitle}>Timeline</Text>
-          <TextInput
-            style={styles.previewTextInput}
-            value={proposal.timeline}
-            onChangeText={(t) => setProposal({ ...proposal, timeline: t })}
-            multiline
-          />
-        </View>
-
-        {/* Payment Terms */}
-        <View style={styles.previewCard}>
-          <Text style={styles.previewSectionTitle}>Payment Terms</Text>
-          <TextInput
-            style={styles.previewTextInput}
-            value={proposal.paymentTerms}
-            onChangeText={(t) => setProposal({ ...proposal, paymentTerms: t })}
-            multiline
-          />
-        </View>
-
-        {/* Exclusions */}
-        <View style={styles.previewCard}>
-          <Text style={styles.previewSectionTitle}>Exclusions</Text>
-          {proposal.exclusions.map((exc, idx) => (
-            <View key={idx} style={styles.scopeItemRow}>
-              <Text style={styles.bullet}>•</Text>
-              <TextInput
-                style={styles.scopeItemInput}
-                value={exc}
-                onChangeText={(t) => {
-                  const updated = [...proposal.exclusions];
-                  updated[idx] = t;
-                  setProposal({ ...proposal, exclusions: updated });
-                }}
-              />
-            </View>
-          ))}
-        </View>
-
-        {/* Warranty */}
-        <View style={styles.previewCard}>
-          <Text style={styles.previewSectionTitle}>Warranty</Text>
-          <TextInput
-            style={styles.previewTextInput}
-            value={proposal.warranty}
-            onChangeText={(t) => setProposal({ ...proposal, warranty: t })}
-            multiline
-          />
-        </View>
-
-        {/* Export PDF */}
-        <TouchableOpacity style={styles.exportButton} onPress={handleExportPDF} activeOpacity={0.8}>
-          <FontAwesome name="file-pdf-o" size={20} color="#FFF" style={{ marginRight: 10 }} />
-          <Text style={styles.exportButtonText}>Export PDF</Text>
+  // ── Action buttons (always visible in manual mode) ──
+  const renderActions = () => (
+    <View style={styles.actionsWrap}>
+      <TouchableOpacity style={styles.exportButton} onPress={handleExportPDF} activeOpacity={0.8}>
+        <FontAwesome name="file-pdf-o" size={18} color="#FFF" style={{ marginRight: 10 }} />
+        <Text style={styles.exportButtonText}>Export PDF</Text>
+      </TouchableOpacity>
+      <View style={styles.secondaryRow}>
+        <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={isSaving} activeOpacity={0.8}>
+          <FontAwesome name="save" size={16} color={BNG_COLORS.primary} style={{ marginRight: 8 }} />
+          <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save Draft'}</Text>
         </TouchableOpacity>
-
-        {/* Edit & Re-generate */}
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={() => setProposal(null)}
-          activeOpacity={0.8}
-        >
-          <FontAwesome name="pencil" size={16} color={BNG_COLORS.primary} style={{ marginRight: 8 }} />
-          <Text style={styles.retryButtonText}>Edit Details & Re-Generate</Text>
-        </TouchableOpacity>
-      </>
-    );
-  };
+      </View>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          title: 'AI Proposal',
+          title: 'Proposal & Contract',
           headerStyle: { backgroundColor: BNG_COLORS.primary },
           headerTintColor: '#fff',
         }}
       />
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {proposal ? renderProposalPreview() : renderInputForm()}
-        <View style={styles.bottomSpacing} />
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {renderModeTabs()}
+        {mode === 'ai' ? renderAiAssist() : (
+          <>
+            {renderManualForm()}
+            {renderActions()}
+          </>
+        )}
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BNG_COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: BNG_COLORS.background },
   scrollView: { flex: 1 },
   scrollContent: { padding: 20 },
-  instructionCard: {
-    backgroundColor: `${BNG_COLORS.warning}10`,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: `${BNG_COLORS.warning}25`,
-  },
-  instructionHeader: {
+
+  // Mode tabs
+  modeContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    gap: 8,
-  },
-  instructionTitle: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: BNG_COLORS.text,
-  },
-  instructionText: {
-    fontSize: 14,
-    color: BNG_COLORS.textSecondary,
-    lineHeight: 21,
-  },
-  showHelp: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 16,
-  },
-  showHelpText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: BNG_COLORS.primary,
-  },
-  formCard: {
     backgroundColor: BNG_COLORS.surface,
-    borderRadius: 20,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 20,
+    ...Platform.select({ ios: SHADOWS.sm, android: { elevation: 2 } }),
+  },
+  modeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  modeTabActive: { backgroundColor: BNG_COLORS.primary },
+  modeTabText: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.textSecondary },
+  modeTabTextActive: { color: '#FFF' },
+
+  // Cards
+  card: {
+    backgroundColor: BNG_COLORS.surface,
+    borderRadius: 16,
     padding: 20,
     marginBottom: 16,
-    ...Platform.select({
-      ios: SHADOWS.md,
-      android: { elevation: 3 },
-    }),
+    ...Platform.select({ ios: SHADOWS.sm, android: { elevation: 2 } }),
   },
-  formTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: BNG_COLORS.text,
-    marginBottom: 16,
+  cardTitle: { fontSize: 17, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 14 },
+  cardSubtitle: { fontSize: 13, color: BNG_COLORS.textSecondary, marginBottom: 14, lineHeight: 19 },
+
+  // Form fields
+  row: { flexDirection: 'row' },
+  fieldWrap: { marginBottom: 12 },
+  label: {
+    fontSize: 11, fontWeight: '700', color: BNG_COLORS.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6,
   },
-  fieldRow: {
-    flexDirection: 'row',
-    marginBottom: 0,
-  },
-  fieldCol: {
-    flex: 1,
-  },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: BNG_COLORS.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-    marginLeft: 4,
-  },
-  fieldInput: {
-    backgroundColor: BNG_COLORS.background,
-    borderWidth: 1,
-    borderColor: BNG_COLORS.border,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    color: BNG_COLORS.text,
-    marginBottom: 14,
+  input: {
+    backgroundColor: BNG_COLORS.background, borderWidth: 1, borderColor: BNG_COLORS.border,
+    borderRadius: 10, padding: 12, fontSize: 15, color: BNG_COLORS.text,
   },
   scopeInput: {
-    backgroundColor: BNG_COLORS.background,
-    borderWidth: 1,
-    borderColor: BNG_COLORS.border,
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 15,
-    color: BNG_COLORS.text,
-    minHeight: 200,
-    lineHeight: 22,
+    backgroundColor: BNG_COLORS.background, borderWidth: 1, borderColor: BNG_COLORS.border,
+    borderRadius: 10, padding: 14, fontSize: 14, color: BNG_COLORS.text,
+    minHeight: 140, lineHeight: 21,
   },
-  generateButton: {
-    backgroundColor: BNG_COLORS.accent,
-    flexDirection: 'row',
-    paddingVertical: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    ...Platform.select({
-      ios: SHADOWS.glowAccent,
-      android: { elevation: 6 },
-    }),
+
+  // Line items
+  lineItemRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 10 },
+  removeBtn: { width: 36, height: 44, alignItems: 'center', justifyContent: 'center' },
+  addItemBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: BNG_COLORS.primary, borderStyle: 'dashed', marginTop: 4,
   },
-  generateButtonText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
+  addItemText: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.primary },
+
+  // Totals
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  totalLabel: { fontSize: 14, color: BNG_COLORS.textSecondary },
+  totalValue: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.text },
+  taxToggle: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, marginTop: 4 },
+  taxToggleText: { fontSize: 14, color: BNG_COLORS.textSecondary },
+  grandTotalRow: { borderTopWidth: 2, borderTopColor: BNG_COLORS.primary, paddingTop: 12, marginTop: 8 },
+  grandTotalLabel: { fontSize: 18, fontWeight: '800', color: BNG_COLORS.primary },
+  grandTotalValue: { fontSize: 18, fontWeight: '800', color: BNG_COLORS.primary },
+  paymentPreview: {
+    backgroundColor: BNG_COLORS.background, borderRadius: 10, padding: 14, marginTop: 12,
   },
-  successBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: BNG_COLORS.successBg,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
+  paymentPreviewTitle: { fontSize: 12, fontWeight: '700', color: BNG_COLORS.textMuted, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 },
+  paymentPreviewLine: { fontSize: 13, color: BNG_COLORS.textSecondary, marginBottom: 4 },
+
+  // Contract note
+  contractNote: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: `${BNG_COLORS.primary}08`,
+    borderRadius: 12, padding: 14, marginBottom: 16,
   },
-  successTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: BNG_COLORS.success,
-    marginBottom: 2,
+  contractNoteText: { flex: 1, fontSize: 13, color: BNG_COLORS.textSecondary, lineHeight: 18 },
+
+  // AI button
+  aiButton: {
+    backgroundColor: BNG_COLORS.accent, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 16, borderRadius: 14, marginTop: 12,
+    ...Platform.select({ ios: { shadowColor: BNG_COLORS.accent, shadowOpacity: 0.3, shadowRadius: 8 }, android: { elevation: 6 } }),
   },
-  successSubtitle: {
-    fontSize: 14,
-    color: BNG_COLORS.textSecondary,
-  },
-  previewCard: {
-    backgroundColor: BNG_COLORS.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    ...Platform.select({
-      ios: SHADOWS.sm,
-      android: { elevation: 2 },
-    }),
-  },
-  previewSectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: BNG_COLORS.primary,
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  previewTextInput: {
-    fontSize: 15,
-    color: BNG_COLORS.text,
-    lineHeight: 22,
-    backgroundColor: BNG_COLORS.background,
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: BNG_COLORS.border,
-  },
-  scopeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  scopeAccent: {
-    width: 4,
-    height: 24,
-    backgroundColor: BNG_COLORS.accent,
-    borderRadius: 2,
-    marginRight: 10,
-  },
-  scopeSectionTitle: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: '700',
-    color: BNG_COLORS.text,
-  },
-  scopeItemRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-    paddingLeft: 14,
-  },
-  bullet: {
-    fontSize: 18,
-    color: BNG_COLORS.textMuted,
-    marginRight: 8,
-    marginTop: 2,
-  },
-  scopeItemInput: {
-    flex: 1,
-    fontSize: 14,
-    color: BNG_COLORS.text,
-    lineHeight: 20,
-    padding: 0,
-  },
+  aiButtonText: { color: '#FFF', fontSize: 17, fontWeight: '700' },
+
+  // Actions
+  actionsWrap: { marginTop: 8 },
   exportButton: {
-    backgroundColor: BNG_COLORS.primary,
-    flexDirection: 'row',
-    paddingVertical: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    ...Platform.select({
-      ios: SHADOWS.glowPrimary,
-      android: { elevation: 6 },
-    }),
+    backgroundColor: BNG_COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 18, borderRadius: 14,
+    ...Platform.select({ ios: { shadowColor: BNG_COLORS.primary, shadowOpacity: 0.3, shadowRadius: 8 }, android: { elevation: 6 } }),
   },
-  exportButtonText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
+  exportButtonText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
+  secondaryRow: { flexDirection: 'row', marginTop: 12, gap: 12 },
+  saveButton: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 14, borderRadius: 12, backgroundColor: BNG_COLORS.surface,
+    borderWidth: 1, borderColor: BNG_COLORS.border,
   },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: BNG_COLORS.surface,
-    borderWidth: 1,
-    borderColor: BNG_COLORS.border,
-    marginTop: 12,
-  },
-  retryButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: BNG_COLORS.primary,
-  },
-  bottomSpacing: { height: 40 },
+  saveButtonText: { fontSize: 15, fontWeight: '600', color: BNG_COLORS.primary },
 });

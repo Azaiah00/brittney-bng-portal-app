@@ -1,25 +1,16 @@
-// Add Lead screen: regular form to create a lead (no AI). Same fields as Add Customer.
-// Use this for quick manual entry; Scratchpad is optional for parsing notes with AI.
+// Edit Lead: load lead by id, same form as Add Lead, save updates and optional delete.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  StyleSheet,
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  Platform,
-  KeyboardAvoidingView,
+  StyleSheet, View, Text, TextInput, TouchableOpacity,
+  ScrollView, Alert, Platform, KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS } from '../lib/theme';
-import { saveLeadOffline } from '../lib/offline';
+import { fetchLead, updateLead, deleteLead } from '../lib/data';
 import { LeadSourcePicker } from '../components/LeadSourcePicker';
 
-// Build full address string from parts for storage/display
 function buildAddress(parts: {
   addressLine1: string;
   addressLine2: string;
@@ -36,8 +27,10 @@ function buildAddress(parts: {
   return partsArr.length > 0 ? partsArr.join(', ') : null;
 }
 
-export default function AddLeadScreen() {
+export default function EditLeadScreen() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [loading, setLoading] = useState(!!id);
   const [companyName, setCompanyName] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -52,7 +45,41 @@ export default function AddLeadScreen() {
   const [projectType, setProjectType] = useState('');
   const [notes, setNotes] = useState('');
   const [leadSourceId, setLeadSourceId] = useState<string | null>(null);
+  const [status, setStatus] = useState<'new' | 'contacted' | 'quoted' | 'converted'>('new');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const lead = await fetchLead(id);
+        if (cancelled || !lead) return;
+        setCompanyName(lead.company_name ?? '');
+        const fn = lead.first_name ?? lead.name.split(' ')[0] ?? '';
+        const ln = lead.last_name ?? lead.name.split(' ').slice(1).join(' ') ?? '';
+        setFirstName(fn);
+        setLastName(ln);
+        setPhone(lead.phone ?? '');
+        setEmail(lead.email ?? '');
+        setAlternateEmail((lead as any).alternate_email ?? '');
+        setAddressLine1((lead as any).address_line_1 ?? '');
+        setAddressLine2((lead as any).address_line_2 ?? '');
+        setCity((lead as any).city ?? '');
+        setState((lead as any).state ?? '');
+        setZipCode((lead as any).zip_code ?? '');
+        setProjectType(lead.project_type ?? '');
+        setNotes(lead.notes ?? '');
+        setLeadSourceId(lead.lead_source_id);
+        setStatus(lead.status);
+      } catch {
+        if (!cancelled) Alert.alert('Error', 'Could not load lead.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id]);
 
   const handleSave = async () => {
     const fn = firstName.trim();
@@ -61,13 +88,12 @@ export default function AddLeadScreen() {
       Alert.alert('Required', 'Please enter both first name and last name.');
       return;
     }
-
+    if (!id) return;
     const fullName = `${fn} ${ln}`.trim();
     const address = buildAddress({ addressLine1, addressLine2, city, state, zipCode });
-
     setSaving(true);
     try {
-      await saveLeadOffline({
+      await updateLead(id, {
         name: fullName,
         first_name: fn,
         last_name: ln,
@@ -75,7 +101,7 @@ export default function AddLeadScreen() {
         phone: phone.trim() || null,
         email: email.trim() || null,
         alternate_email: alternateEmail.trim() || null,
-        address,
+        address: address ?? null,
         address_line_1: addressLine1.trim() || null,
         address_line_2: addressLine2.trim() || null,
         city: city.trim() || null,
@@ -84,7 +110,7 @@ export default function AddLeadScreen() {
         project_type: projectType.trim() || null,
         notes: notes.trim() || null,
         lead_source_id: leadSourceId,
-        status: 'new',
+        status,
       });
       router.replace('/leads' as any);
     } catch (e: any) {
@@ -92,6 +118,32 @@ export default function AddLeadScreen() {
       setSaving(false);
     }
   };
+
+  const handleDelete = () => {
+    Alert.alert('Delete Lead?', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteLead(id!);
+            router.replace('/leads' as any);
+          } catch {
+            Alert.alert('Error', 'Could not delete lead.');
+          }
+        },
+      },
+    ]);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={BNG_COLORS.primary} />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -105,7 +157,6 @@ export default function AddLeadScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Company name (optional) */}
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Company Name (optional)</Text>
           <View style={styles.inputRow}>
@@ -122,8 +173,6 @@ export default function AddLeadScreen() {
             />
           </View>
         </View>
-
-        {/* First name & Last name */}
         <View style={styles.nameRow}>
           <View style={[styles.fieldWrap, { flex: 1 }]}>
             <Text style={styles.label}>First Name *</Text>
@@ -158,8 +207,6 @@ export default function AddLeadScreen() {
             </View>
           </View>
         </View>
-
-        {/* Phone */}
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Phone</Text>
           <View style={styles.inputRow}>
@@ -176,8 +223,6 @@ export default function AddLeadScreen() {
             />
           </View>
         </View>
-
-        {/* Email & Alternate email */}
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Email</Text>
           <View style={styles.inputRow}>
@@ -212,8 +257,6 @@ export default function AddLeadScreen() {
             />
           </View>
         </View>
-
-        {/* Address section */}
         <Text style={styles.sectionLabel}>Address</Text>
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Address Line 1</Text>
@@ -289,8 +332,6 @@ export default function AddLeadScreen() {
             </View>
           </View>
         </View>
-
-        {/* Project type */}
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Project Type</Text>
           <View style={styles.inputRow}>
@@ -307,8 +348,6 @@ export default function AddLeadScreen() {
             />
           </View>
         </View>
-
-        {/* Notes */}
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Notes</Text>
           <TextInput
@@ -322,11 +361,25 @@ export default function AddLeadScreen() {
             textAlignVertical="top"
           />
         </View>
-
         <View style={styles.fieldWrap}>
           <LeadSourcePicker value={leadSourceId} onChange={setLeadSourceId} label="Lead source" />
         </View>
-
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Status</Text>
+          <View style={styles.statusRow}>
+            {(['new', 'contacted', 'quoted', 'converted'] as const).map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.statusChip, status === s && styles.statusChipActive]}
+                onPress={() => setStatus(s)}
+              >
+                <Text style={[styles.statusChipText, status === s && styles.statusChipTextActive]}>
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
         <TouchableOpacity
           style={[styles.saveButton, saving && styles.saveButtonDisabled]}
           onPress={handleSave}
@@ -334,7 +387,11 @@ export default function AddLeadScreen() {
           activeOpacity={0.8}
         >
           <FontAwesome name="check" size={18} color="#FFF" style={{ marginRight: 10 }} />
-          <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Add Lead'}</Text>
+          <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save Changes'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+          <FontAwesome name="trash-o" size={18} color={BNG_COLORS.accent} style={{ marginRight: 10 }} />
+          <Text style={styles.deleteButtonText}>Delete Lead</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -343,6 +400,7 @@ export default function AddLeadScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BNG_COLORS.background },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BNG_COLORS.background },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 40 },
   fieldWrap: { marginBottom: 20 },
@@ -354,13 +412,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 8,
   },
-  sectionLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: BNG_COLORS.text,
-    marginBottom: 12,
-    marginTop: 8,
-  },
+  sectionLabel: { fontSize: 14, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 12, marginTop: 8 },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -370,12 +422,7 @@ const styles = StyleSheet.create({
     borderColor: BNG_COLORS.border,
     ...Platform.select({ ios: { shadowOpacity: 0.06, shadowRadius: 4 }, android: { elevation: 2 } }),
   },
-  iconWrap: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  iconWrap: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   input: {
     flex: 1,
     paddingVertical: 14,
@@ -396,6 +443,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BNG_COLORS.border,
   },
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  statusChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: BNG_COLORS.surface,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.border,
+  },
+  statusChipActive: { backgroundColor: BNG_COLORS.primary, borderColor: BNG_COLORS.primary },
+  statusChipText: { fontSize: 13, fontWeight: '600', color: BNG_COLORS.textSecondary },
+  statusChipTextActive: { color: '#FFF' },
   saveButton: {
     backgroundColor: BNG_COLORS.primary,
     flexDirection: 'row',
@@ -411,4 +470,15 @@ const styles = StyleSheet.create({
   },
   saveButtonDisabled: { opacity: 0.7 },
   saveButtonText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.accent,
+  },
+  deleteButtonText: { fontSize: 16, fontWeight: '700', color: BNG_COLORS.accent },
 });

@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
-import { fetchProject, fetchLogs, createLog, fetchLeads, fetchCustomers } from '../../../lib/data';
+import { fetchProject, fetchLogs, createLog, fetchLeads, fetchCustomers, deleteProject } from '../../../lib/data';
 import { Database } from '../../../types/database';
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
@@ -137,6 +137,14 @@ export default function ProjectTimelineScreen() {
           headerRight: () => (
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity
+                onPress={() => router.push({ pathname: '/edit-project', params: { id } } as any)}
+                style={[styles.headerButton, { backgroundColor: '#FFF' }]}
+                activeOpacity={0.8}
+              >
+                <FontAwesome name="pencil" size={14} color={BNG_COLORS.primary} style={{ marginRight: 6 }} />
+                <Text style={[styles.headerButtonText, { color: BNG_COLORS.primary }]}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => router.push(`/project/${id}/proposal`)}
                 style={[styles.headerButton, { backgroundColor: '#FFF' }]}
                 activeOpacity={0.8}
@@ -191,6 +199,38 @@ export default function ProjectTimelineScreen() {
             <Text style={styles.statLabel}>Budget</Text>
           </View>
         </View>
+      </View>
+
+      {/* Project tools row — quick access to all project sub-pages */}
+      <View style={styles.toolsRow}>
+        <TouchableOpacity
+          style={styles.toolBtn}
+          onPress={() => router.push(`/project/${id}/estimator`)}
+        >
+          <FontAwesome name="calculator" size={15} color={BNG_COLORS.primary} />
+          <Text style={styles.toolBtnText}>Estimate</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.toolBtn}
+          onPress={() => router.push(`/project/${id}/proposal`)}
+        >
+          <FontAwesome name="file-text" size={15} color={BNG_COLORS.primary} />
+          <Text style={styles.toolBtnText}>Proposal</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.toolBtn}
+          onPress={() => router.push(`/project/${id}/checklist`)}
+        >
+          <FontAwesome name="check-square-o" size={15} color={BNG_COLORS.success} />
+          <Text style={styles.toolBtnText}>Checklist</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.toolBtn}
+          onPress={() => router.push(`/project/${id}/punch-list`)}
+        >
+          <FontAwesome name="list" size={15} color={BNG_COLORS.accent} />
+          <Text style={styles.toolBtnText}>Punch List</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Input Area */}
@@ -357,4 +397,13 @@ const styles = StyleSheet.create({
   logAuthor: { fontSize: 13, fontWeight: '600', color: BNG_COLORS.primary },
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 8 },
   logImage: { width: 72, height: 72, borderRadius: 10 },
+  toolsRow: {
+    flexDirection: 'row', gap: 8, marginHorizontal: 16, marginBottom: 12, flexWrap: 'wrap',
+  },
+  toolBtn: {
+    flex: 1, minWidth: 80, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12,
+    backgroundColor: BNG_COLORS.surface, borderWidth: 1, borderColor: BNG_COLORS.border,
+  },
+  toolBtnText: { fontSize: 12, fontWeight: '700', color: BNG_COLORS.text },
 });

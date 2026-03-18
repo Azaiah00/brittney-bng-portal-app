@@ -1,3 +1,5 @@
+// Edit Project: load project by id, same form as Add Project, save updates and optional delete.
+
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
@@ -6,30 +8,41 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../lib/theme';
-import { createProject, fetchLeads, fetchCustomers } from '../lib/data';
+import { fetchProject, updateProject, deleteProject, fetchLeads, fetchCustomers } from '../lib/data';
 import { DatePickerField } from '../components/DatePickerField';
 import { CurrencyInput } from '../components/CurrencyInput';
 
-// Unified contact: lead or customer, for linking projects to who they belong to
 type ContactOption = { id: string; name: string; address?: string | null; type: 'lead' | 'customer' };
 
-export default function AddProjectScreen() {
+const PHASES = ['Planning', 'Contract', 'Demo', 'Rough-in', 'Finish', 'Punch List'];
+const STATUSES = ['active', 'pending', 'completed'] as const;
+
+export default function EditProjectScreen() {
   const router = useRouter();
-  // Accept optional pre-selected contact from Leads/Contacts screen
-  const params = useLocalSearchParams<{ contactId?: string; contactType?: string }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [loading, setLoading] = useState(!!id);
   const [title, setTitle] = useState('');
   const [address, setAddress] = useState('');
   const [budget, setBudget] = useState('');
   const [phase, setPhase] = useState('Planning');
   const [startDate, setStartDate] = useState('');
+  const [status, setStatus] = useState<'active' | 'pending' | 'completed'>('active');
   const [selectedContact, setSelectedContact] = useState<ContactOption | null>(null);
   const [contacts, setContacts] = useState<ContactOption[]>([]);
   const [showContactPicker, setShowContactPicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetchLeads(), fetchCustomers()])
-      .then(([leadsData, customersData]) => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [proj, leadsData, customersData] = await Promise.all([
+          fetchProject(id),
+          fetchLeads(),
+          fetchCustomers(),
+        ]);
+        if (cancelled || !proj) return;
         const leadContacts: ContactOption[] = leadsData.map((l) => ({
           id: l.id,
           name: l.name,
@@ -44,31 +57,37 @@ export default function AddProjectScreen() {
         }));
         const all = [...leadContacts, ...customerContacts];
         setContacts(all);
-
-        // Pre-select contact if passed via route params from Contacts screen
-        if (params.contactId && params.contactType) {
-          const match = all.find(
-            (c) => c.id === params.contactId && c.type === params.contactType
-          );
-          if (match) {
-            setSelectedContact(match);
-            if (match.address && !address) setAddress(match.address);
-          }
+        setTitle(proj.title);
+        setAddress(proj.address ?? '');
+        setBudget(proj.budget != null ? String(proj.budget) : '');
+        setPhase(proj.phase ?? 'Planning');
+        setStartDate(proj.start_date ?? '');
+        setStatus(proj.status);
+        if (proj.lead_id) {
+          const match = all.find((c) => c.type === 'lead' && c.id === proj.lead_id);
+          if (match) setSelectedContact(match);
+        } else if (proj.customer_id) {
+          const match = all.find((c) => c.type === 'customer' && c.id === proj.customer_id);
+          if (match) setSelectedContact(match);
         }
-      })
-      .catch(() => {});
-  }, []);
-
-  const PHASES = ['Planning', 'Contract', 'Demo', 'Rough-in', 'Finish', 'Punch List'];
+      } catch {
+        if (!cancelled) Alert.alert('Error', 'Could not load project.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id]);
 
   const handleSave = async () => {
     if (!title.trim()) {
       Alert.alert('Required', 'Please enter a project title.');
       return;
     }
+    if (!id) return;
     setSaving(true);
     try {
-      const created = await createProject({
+      await updateProject(id, {
         title: title.trim(),
         address: address.trim() || null,
         budget: budget ? parseFloat(budget.replace(/[^0-9.]/g, '')) : null,
@@ -76,32 +95,53 @@ export default function AddProjectScreen() {
         start_date: startDate || null,
         lead_id: selectedContact?.type === 'lead' ? selectedContact.id : null,
         customer_id: selectedContact?.type === 'customer' ? selectedContact.id : null,
-        status: 'active',
-        progress: 0,
+        status,
       });
-      // Go straight to the new project — do not stay on this form (avoids duplicate creates)
-      router.replace(`/project/${created.id}` as any);
+      router.replace(`/project/${id}` as any);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to create project.');
+      Alert.alert('Error', err.message || 'Failed to save project.');
       setSaving(false);
     }
   };
 
+  const handleDelete = () => {
+    Alert.alert('Delete Project?', 'Timeline, checklist, punch list, and estimates for this project will be affected. This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteProject(id!);
+            router.replace('/(tabs)' as any);
+          } catch {
+            Alert.alert('Error', 'Could not delete project.');
+          }
+        },
+      },
+    ]);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={BNG_COLORS.primary} />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <FontAwesome name="arrow-left" size={18} color={BNG_COLORS.text} />
+            <FontAwesome name="arrow-left" size={18} color={BNG_COLORS.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Project</Text>
+          <Text style={styles.headerTitle}>Edit Project</Text>
           <View style={{ width: 44 }} />
         </View>
 
-        {/* Form */}
         <View style={styles.card}>
-          {/* Title */}
           <Text style={styles.label}>Project Title *</Text>
           <TextInput
             style={styles.input}
@@ -111,7 +151,6 @@ export default function AddProjectScreen() {
             onChangeText={setTitle}
           />
 
-          {/* Link to Contact (lead or customer) — connects project to who it's for */}
           <Text style={styles.label}>Link to Contact (optional)</Text>
           <TouchableOpacity
             style={styles.input}
@@ -120,7 +159,7 @@ export default function AddProjectScreen() {
             <Text style={{ color: selectedContact ? BNG_COLORS.text : BNG_COLORS.textMuted, fontSize: 16 }}>
               {selectedContact
                 ? `${selectedContact.name} — ${selectedContact.type === 'lead' ? 'Lead' : 'Customer'}`
-                : 'Select a contact (lead or customer)...'}
+                : 'Select a contact...'}
             </Text>
           </TouchableOpacity>
           {showContactPicker && (
@@ -148,15 +187,9 @@ export default function AddProjectScreen() {
                   <Text style={styles.pickerSubtext}>{c.type === 'lead' ? 'Lead' : 'Customer'}</Text>
                 </TouchableOpacity>
               ))}
-              {contacts.length === 0 && (
-                <Text style={styles.pickerEmpty}>
-                  No contacts yet. Add leads (Scratchpad) or customers (Contacts tab).
-                </Text>
-              )}
             </View>
           )}
 
-          {/* Address */}
           <Text style={styles.label}>Address</Text>
           <TextInput
             style={styles.input}
@@ -166,7 +199,6 @@ export default function AddProjectScreen() {
             onChangeText={setAddress}
           />
 
-          {/* Budget */}
           <Text style={styles.label}>Budget</Text>
           <CurrencyInput
             value={budget}
@@ -175,31 +207,38 @@ export default function AddProjectScreen() {
             style={styles.input}
           />
 
-          {/* Phase */}
-          <Text style={styles.label}>Starting Phase</Text>
+          <Text style={styles.label}>Phase</Text>
           <View style={styles.phaseRow}>
-            {PHASES.map(p => (
+            {PHASES.map((p) => (
               <TouchableOpacity
                 key={p}
                 style={[styles.phaseChip, phase === p && styles.phaseChipActive]}
                 onPress={() => setPhase(p)}
               >
-                <Text style={[styles.phaseChipText, phase === p && styles.phaseChipTextActive]}>
-                  {p}
-                </Text>
+                <Text style={[styles.phaseChipText, phase === p && styles.phaseChipTextActive]}>{p}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* Start Date */}
           <Text style={styles.label}>Start Date</Text>
-          <DatePickerField
-            value={startDate}
-            onChange={setStartDate}
-          />
+          <DatePickerField value={startDate} onChange={setStartDate} />
+
+          <Text style={styles.label}>Status</Text>
+          <View style={styles.phaseRow}>
+            {STATUSES.map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.phaseChip, status === s && styles.phaseChipActive]}
+                onPress={() => setStatus(s)}
+              >
+                <Text style={[styles.phaseChipText, status === s && styles.phaseChipTextActive]}>
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        {/* Save */}
         <TouchableOpacity
           style={[styles.saveBtn, saving && { opacity: 0.7 }]}
           onPress={handleSave}
@@ -211,9 +250,14 @@ export default function AddProjectScreen() {
           ) : (
             <>
               <FontAwesome name="check" size={18} color="#FFF" style={{ marginRight: 10 }} />
-              <Text style={styles.saveBtnText}>Create Project</Text>
+              <Text style={styles.saveBtnText}>Save Changes</Text>
             </>
           )}
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
+          <FontAwesome name="trash-o" size={18} color={BNG_COLORS.accent} style={{ marginRight: 10 }} />
+          <Text style={styles.deleteBtnText}>Delete Project</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -222,48 +266,93 @@ export default function AddProjectScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BNG_COLORS.background },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BNG_COLORS.background },
   scroll: { padding: 20, paddingBottom: 60 },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
   },
   backBtn: {
-    width: 44, height: 44, borderRadius: 12, backgroundColor: BNG_COLORS.surface,
-    alignItems: 'center', justifyContent: 'center', ...SHADOWS.sm,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: BNG_COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.sm,
   },
   headerTitle: { fontSize: 20, fontWeight: '800', color: BNG_COLORS.text },
   card: {
-    backgroundColor: BNG_COLORS.surface, borderRadius: 20, padding: 20, marginBottom: 24,
+    backgroundColor: BNG_COLORS.surface,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 24,
     ...Platform.select({ ios: SHADOWS.md, android: { elevation: 3 } }),
   },
   label: {
-    fontSize: 13, fontWeight: '700', color: BNG_COLORS.textSecondary,
-    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginTop: 16,
+    fontSize: 13,
+    fontWeight: '700',
+    color: BNG_COLORS.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    marginTop: 16,
   },
   input: {
-    backgroundColor: BNG_COLORS.background, borderRadius: 12, padding: 14,
-    fontSize: 16, color: BNG_COLORS.text, borderWidth: 1, borderColor: BNG_COLORS.border,
+    backgroundColor: BNG_COLORS.background,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    color: BNG_COLORS.text,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.border,
   },
   phaseRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   phaseChip: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: BNG_COLORS.background, borderWidth: 1, borderColor: BNG_COLORS.border,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: BNG_COLORS.background,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.border,
   },
   phaseChipActive: { backgroundColor: BNG_COLORS.primary, borderColor: BNG_COLORS.primary },
   phaseChipText: { fontSize: 13, fontWeight: '600', color: BNG_COLORS.textSecondary },
   phaseChipTextActive: { color: '#FFF' },
   pickerList: {
-    backgroundColor: BNG_COLORS.background, borderRadius: 12, marginTop: 4,
-    borderWidth: 1, borderColor: BNG_COLORS.border, maxHeight: 200, overflow: 'hidden',
+    backgroundColor: BNG_COLORS.background,
+    borderRadius: 12,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.border,
+    maxHeight: 200,
+    overflow: 'hidden',
   },
   pickerItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: BNG_COLORS.border },
   pickerItemActive: { backgroundColor: `${BNG_COLORS.primary}15` },
   pickerText: { fontSize: 15, color: BNG_COLORS.text, fontWeight: '600' },
   pickerSubtext: { fontSize: 12, color: BNG_COLORS.textMuted, marginTop: 2 },
-  pickerEmpty: { padding: 14, fontSize: 14, color: BNG_COLORS.textMuted, fontStyle: 'italic' },
   saveBtn: {
-    backgroundColor: BNG_COLORS.primary, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', paddingVertical: 18, borderRadius: 16,
+    backgroundColor: BNG_COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    borderRadius: 16,
     ...Platform.select({ ios: SHADOWS.glowPrimary, android: { elevation: 6 } }),
   },
   saveBtnText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.accent,
+  },
+  deleteBtnText: { fontSize: 16, fontWeight: '700', color: BNG_COLORS.accent },
 });

@@ -17,6 +17,7 @@ export default function ScratchpadScreen() {
   const [parsedResult, setParsedResult] = useState<ParsedLead | null>(null);
   const [showInstructions, setShowInstructions] = useState(true);
   const [leadSourceId, setLeadSourceId] = useState<string | null>(null);
+  const [savingLead, setSavingLead] = useState(false);
   const router = useRouter();
 
   const handleParseWithAI = async () => {
@@ -39,7 +40,7 @@ export default function ScratchpadScreen() {
 
   const handleSaveLead = async () => {
     if (!parsedResult) return;
-
+    setSavingLead(true);
     try {
       await saveLeadOffline({
         name: parsedResult.name || 'Unknown',
@@ -51,12 +52,10 @@ export default function ScratchpadScreen() {
         status: 'new' as const,
         lead_source_id: leadSourceId,
       });
-
-      Alert.alert('Lead Saved', `"${parsedResult.name}" has been saved as a new lead.`, [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      router.replace('/leads' as any);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to save lead.');
+      setSavingLead(false);
     }
   };
 
@@ -253,9 +252,20 @@ export default function ScratchpadScreen() {
         </View>
 
         {/* Action Buttons */}
-        <TouchableOpacity style={styles.saveButton} onPress={handleSaveLead} activeOpacity={0.8}>
-          <FontAwesome name="check" size={18} color="#FFF" style={{ marginRight: 10 }} />
-          <Text style={styles.saveButtonText}>Save as New Lead</Text>
+        <TouchableOpacity
+          style={[styles.saveButton, savingLead && { opacity: 0.7 }]}
+          onPress={handleSaveLead}
+          activeOpacity={0.8}
+          disabled={savingLead}
+        >
+          {savingLead ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <>
+              <FontAwesome name="check" size={18} color="#FFF" style={{ marginRight: 10 }} />
+              <Text style={styles.saveButtonText}>Save as New Lead</Text>
+            </>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity

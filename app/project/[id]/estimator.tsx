@@ -7,6 +7,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
 import { generateEstimateItems } from '../../../lib/gemini';
 import { fetchProject, saveEstimate } from '../../../lib/data';
+import { CurrencyInput } from '../../../components/CurrencyInput';
 import { Database } from '../../../types/database';
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
@@ -564,17 +565,12 @@ export default function EstimatorScreen() {
             </View>
             <View style={[styles.inputWrapper, { flex: 2 }]}>
               <Text style={styles.inputLabel}>Unit Price</Text>
-              <View style={styles.priceInputContainer}>
-                <Text style={styles.currencySymbol}>$</Text>
-                <TextInput
-                  style={styles.priceInput}
-                  placeholder="0.00"
-                  placeholderTextColor={BNG_COLORS.textMuted}
-                  value={price}
-                  onChangeText={setPrice}
-                  keyboardType="decimal-pad"
-                />
-              </View>
+              <CurrencyInput
+                value={price}
+                onChangeText={setPrice}
+                placeholder="$0.00"
+                style={styles.inputSmall}
+              />
             </View>
           </View>
           

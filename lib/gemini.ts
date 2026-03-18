@@ -142,7 +142,7 @@ Make sure subtotal equals the sum of (quantity * unitPrice) for all items. Be th
 }
 
 // ---------------------------------------------------------------------------
-// 3. Generate Full Proposal
+// 3. Generate Full Proposal (legacy — kept for backwards compat)
 // ---------------------------------------------------------------------------
 
 export interface ProposalSection {
@@ -204,4 +204,126 @@ Be thorough with the scope of work. Organize it by room or area. Each item shoul
 
   const raw = await callGemini(prompt);
   return safeParseJSON<GeneratedProposal>(raw);
+}
+
+// ---------------------------------------------------------------------------
+// 4. Generate Email / SMS Message (BTB-Hub-inspired message generator)
+// ---------------------------------------------------------------------------
+// Produces a professional, ready-to-send message based on a chosen topic.
+// Supports two modes: "reply" (paste inbound email and get a response) and
+// "compose" (describe situation and get a fresh message).
+
+export interface GeneratedMessage {
+  subject: string;
+  body: string;
+  summary: string;
+}
+
+export async function generateMessage(details: {
+  topic: string;
+  context: string;
+  mode: 'reply' | 'compose';
+}): Promise<GeneratedMessage> {
+  const modeInstructions =
+    details.mode === 'reply'
+      ? `The user pasted an inbound message from a client, subcontractor, or vendor. Write a professional REPLY to that message.`
+      : `The user described a situation. Write a professional NEW message (email or text) for that situation.`;
+
+  const prompt = `You are a professional communications assistant for BNG Remodel, a licensed and insured home remodeling contractor in Richmond, Virginia. Owner: Brittney Reader.
+
+${modeInstructions}
+
+TOPIC / SCENARIO: ${details.topic}
+
+CONTEXT / INBOUND MESSAGE:
+"""
+${details.context}
+"""
+
+INSTRUCTIONS:
+- Write in a warm, professional tone. Keep it concise — no more than 3-4 short paragraphs.
+- Use BNG Remodel branding naturally (company name, owner name where appropriate).
+- If the topic involves money, reference BNG's 30/40/30 payment schedule if relevant.
+- Do NOT include placeholder brackets like [NAME] — fill in naturally from context, or use generic "valued client" / "team" if no name is given.
+- Include a clear call to action at the end when appropriate.
+
+Return ONLY valid JSON:
+{
+  "subject": "Email subject line (or short title for SMS)",
+  "body": "The full message text, ready to send. Use line breaks for paragraphs.",
+  "summary": "One-sentence internal note for Brittney about what this message does"
+}`;
+
+  const raw = await callGemini(prompt);
+  return safeParseJSON<GeneratedMessage>(raw);
+}
+
+// ---------------------------------------------------------------------------
+// 5. Generate Contract Proposal (for the proposal/contract screen)
+// ---------------------------------------------------------------------------
+// Produces structured data that populates the manual form fields.
+// Must be extremely accurate and thorough for Brittney's remodeling business.
+
+export interface ContractLineItem {
+  service: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface ContractProposal {
+  scopeOfWork: string;
+  lineItems: ContractLineItem[];
+  subtotal: number;
+  timeline: string;
+  startDate: string;
+  completionDate: string;
+  specialConditions: string;
+}
+
+export async function generateContractProposal(details: {
+  clientName: string;
+  address: string;
+  projectType: string;
+  scopeText: string;
+  estimateTotal?: number;
+}): Promise<ContractProposal> {
+  const prompt = `You are a senior estimator and proposal writer for BNG Remodel, a licensed and insured general contractor in Richmond, Virginia. Owner: Brittney Reader. BNG specializes in residential and commercial remodeling (kitchens, bathrooms, full renovations, flooring, siding, painting, etc.).
+
+Your job is to create a PERFECT, DETAILED, and PROFESSIONAL proposal from the scope of work provided. This will be attached to BNG Remodel's standard contract and sent directly to the client. Accuracy is critical.
+
+CLIENT: ${details.clientName}
+PROPERTY ADDRESS: ${details.address}
+PROJECT TYPE: ${details.projectType}
+${details.estimateTotal ? `BUDGET/ESTIMATE: $${details.estimateTotal.toLocaleString()}` : ''}
+
+SCOPE OF WORK / JOB NOTES:
+"""
+${details.scopeText}
+"""
+
+INSTRUCTIONS:
+1. Write a thorough "scopeOfWork" description that covers EVERY item of work. Use clear, professional language. Organize by area/room. Include specific details about materials, finishes, and labor. This must be complete enough that the client knows exactly what they are paying for.
+2. Generate detailed "lineItems" with realistic Richmond VA contractor pricing. Include EVERY item as a separate line: demolition, rough-in, finish work, materials, fixtures, labor, cleanup, dumpster, permits, etc. Each line item needs a service name, quantity (use 1 if lump sum), and unit price. Be precise.
+3. Calculate "subtotal" as the exact sum of (quantity * unitPrice) for all line items.
+4. Write a "timeline" describing the project phases and estimated duration (e.g. "Week 1-2: Demolition and rough-in. Week 3-4: Finish carpentry and tile. Week 5: Final fixtures, paint, and punch list.").
+5. Suggest a realistic "startDate" and "completionDate" in YYYY-MM-DD format. Use dates roughly 2-4 weeks from today for start, and add the project duration for completion.
+6. Add any "specialConditions" that are specific to THIS project (e.g. "Client to select tile by March 30", "Access via back entrance only", etc.). If none, use empty string.
+
+Return ONLY valid JSON:
+{
+  "scopeOfWork": "Full detailed scope paragraph(s)",
+  "lineItems": [
+    { "service": "Service name", "quantity": 1, "unitPrice": 1500.00 }
+  ],
+  "subtotal": 0,
+  "timeline": "Phase-by-phase timeline",
+  "startDate": "YYYY-MM-DD",
+  "completionDate": "YYYY-MM-DD",
+  "specialConditions": "Any project-specific conditions or empty string"
+}
+
+Be thorough, realistic, and professional. This must be perfect — Brittney's reputation depends on it.`;
+
+  const raw = await callGemini(prompt);
+  return safeParseJSON<ContractProposal>(raw);
 }

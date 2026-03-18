@@ -85,12 +85,9 @@ export default function AddCustomerScreen() {
         lead_source_id: leadSourceId,
         status: 'active',
       });
-      Alert.alert('Customer Added', `"${fullName}" has been added.`, [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      router.replace('/leads' as any);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to save customer.');
-    } finally {
       setSaving(false);
     }
   };

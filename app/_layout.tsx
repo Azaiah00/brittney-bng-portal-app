@@ -120,6 +120,76 @@ function RootLayoutNav() {
             headerTintColor: '#fff',
           }} 
         />
+        <Stack.Screen 
+          name="add-sub" 
+          options={{ 
+            presentation: 'modal',
+            title: 'Add Subcontractor',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
+          name="edit-lead" 
+          options={{ 
+            presentation: 'modal',
+            title: 'Edit Lead',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
+          name="edit-customer" 
+          options={{ 
+            presentation: 'modal',
+            title: 'Edit Customer',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
+          name="edit-project" 
+          options={{ 
+            presentation: 'modal',
+            title: 'Edit Project',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
+          name="edit-sub" 
+          options={{ 
+            presentation: 'modal',
+            title: 'Edit Subcontractor',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
+          name="message-generator" 
+          options={{ 
+            presentation: 'modal',
+            title: 'Message Generator',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
+          name="project/[id]/checklist" 
+          options={{ 
+            title: 'Job Checklist',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <Stack.Screen 
+          name="project/[id]/punch-list" 
+          options={{ 
+            title: 'Punch List',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }} 
+        />
       </Stack>
     </ThemeProvider>
   );

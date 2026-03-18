@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { route: '/', label: 'Dashboard', icon: 'th-large' },
   { route: '/leads', label: 'Contacts', icon: 'users' },
   { route: '/projects', label: 'Projects', icon: 'briefcase' },
+  { route: '/crew', label: 'Crew', icon: 'wrench' },
   { route: '/calendar', label: 'Calendar', icon: 'calendar' },
   { route: '/settings', label: 'Settings', icon: 'cog' },
 ];
@@ -227,6 +228,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" />
       <Tabs.Screen name="leads" />
       <Tabs.Screen name="projects" />
+      <Tabs.Screen name="crew" />
       <Tabs.Screen name="calendar" />
       <Tabs.Screen name="settings" />
     </Tabs>

@@ -3,7 +3,7 @@ import {
   StyleSheet, View, Text, FlatList, TouchableOpacity,
   SafeAreaView, Platform, Linking, Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
@@ -13,12 +13,19 @@ import {
   fetchCustomers,
   fetchLeadSources,
   updateLeadStatus,
+  updateLead,
   convertLeadToCustomer,
+  deleteLead,
+  deleteCustomer,
+  fetchSubcontractors,
+  fetchProjects,
 } from '../../lib/data';
 import { Database } from '../../types/database';
 
 type LeadRow = Database['public']['Tables']['leads']['Row'];
 type CustomerRow = Database['public']['Tables']['customers']['Row'];
+type SubRow = Database['public']['Tables']['subcontractors']['Row'];
+type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   new: { bg: `${BNG_COLORS.primary}15`, text: BNG_COLORS.primary },
@@ -32,29 +39,47 @@ export default function LeadsScreen() {
   const bp = useBreakpoint();
   const isMobile = bp === 'mobile';
   const router = useRouter();
-  const [viewMode, setViewMode] = useState<'leads' | 'customers'>('leads');
+  const { tab: tabFromUrl } = useLocalSearchParams<{ tab?: string }>();
+  const [viewMode, setViewMode] = useState<'leads' | 'customers' | 'subs'>('leads');
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const [subs, setSubs] = useState<SubRow[]>([]);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [leadData, customerData, sources] = await Promise.all([
+      const [leadData, customerData, sources, subsData, projData] = await Promise.all([
         fetchLeads(),
         fetchCustomers(),
         fetchLeadSources(),
+        fetchSubcontractors(),
+        fetchProjects(),
       ]);
       setLeads(leadData);
       setCustomers(customerData);
+      setSubs(subsData);
+      setProjects(projData);
       const map: Record<string, string> = {};
       sources.forEach((s) => { map[s.id] = s.name; });
       setSourceMap(map);
     } catch { /* Supabase may not be ready */ }
   }, []);
 
-  useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+  // Dashboard "New leads" card passes ?tab=leads
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      const t = tabFromUrl;
+      if (t === 'leads' || t === 'customers' || t === 'subs') {
+        setViewMode(t);
+        setSelectedLeadId(null);
+        setSelectedCustomerId(null);
+      }
+    }, [loadData, tabFromUrl]),
+  );
 
   const selectedLead = leads.find((l) => l.id === selectedLeadId);
   const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
@@ -96,6 +121,44 @@ export default function LeadsScreen() {
     } catch {
       Alert.alert('Error', 'Failed to convert lead to customer.');
     }
+  };
+
+  const handleDeleteLead = (leadId: string) => {
+    Alert.alert('Delete Lead?', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteLead(leadId);
+            await loadData();
+            setSelectedLeadId(null);
+          } catch {
+            Alert.alert('Error', 'Could not delete lead.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteCustomer = (customerId: string) => {
+    Alert.alert('Delete Customer?', 'This cannot be undone. Linked projects will keep the link but the customer record will be removed.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteCustomer(customerId);
+            await loadData();
+            setSelectedCustomerId(null);
+          } catch {
+            Alert.alert('Error', 'Could not delete customer.');
+          }
+        },
+      },
+    ]);
   };
 
   const renderLeadItem = ({ item }: { item: LeadRow }) => {
@@ -206,6 +269,12 @@ export default function LeadsScreen() {
           >
             <Text style={[styles.filterText, viewMode === 'customers' && styles.filterTextActive]}>Customers</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterButton, viewMode === 'subs' && styles.filterButtonActive]}
+            onPress={() => setViewMode('subs')}
+          >
+            <Text style={[styles.filterText, viewMode === 'subs' && styles.filterTextActive]}>Subs</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -238,7 +307,7 @@ export default function LeadsScreen() {
             </View>
           }
         />
-      ) : (
+      ) : viewMode === 'customers' ? (
         <FlatList
           data={customers}
           keyExtractor={(item) => item.id}
@@ -255,11 +324,70 @@ export default function LeadsScreen() {
             </View>
           }
         />
+      ) : (
+        <FlatList
+          data={subs}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.leadItem}
+              onPress={() => {
+                if (item.phone) Linking.openURL(`tel:${item.phone}`);
+                else Alert.alert('No Phone', 'This sub has no phone number.');
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={styles.leadHeader}>
+                <View style={[styles.leadAvatar, { backgroundColor: '#D97706' }]}>
+                  <FontAwesome name="wrench" size={18} color="#FFF" />
+                </View>
+                <View style={styles.leadInfo}>
+                  <Text style={styles.leadName}>{item.name}</Text>
+                  <Text style={styles.leadProject}>{item.trade}</Text>
+                </View>
+                {item.rating > 0 && (
+                  <View style={[styles.badge, { backgroundColor: '#FEF3C7' }]}>
+                    <Text style={[styles.badgeText, { color: '#D97706' }]}>{'★'.repeat(item.rating)}</Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.leadFooter}>
+                <Text style={styles.leadDate}>{item.phone || 'No phone'}</Text>
+                <View style={styles.leadActions}>
+                  <TouchableOpacity style={styles.actionIcon} onPress={() => handleCall(item.phone)}>
+                    <FontAwesome name="phone" size={14} color={BNG_COLORS.success} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionIcon} onPress={() => handleText(item.phone)}>
+                    <FontAwesome name="comment" size={14} color={BNG_COLORS.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionIcon} onPress={() => handleEmail(item.email)}>
+                    <FontAwesome name="envelope-o" size={14} color={BNG_COLORS.info} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            <View style={{ padding: 40, alignItems: 'center' }}>
+              <FontAwesome name="wrench" size={40} color={BNG_COLORS.textMuted} />
+              <Text style={{ color: BNG_COLORS.textMuted, fontSize: 16, marginTop: 12 }}>No subs yet</Text>
+              <Text style={{ color: BNG_COLORS.textMuted, fontSize: 14, marginTop: 4 }}>
+                Add subcontractors in the Crew tab.
+              </Text>
+            </View>
+          }
+        />
       )}
 
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => (viewMode === 'leads' ? router.push('/add-lead') : router.push('/add-customer'))}
+        onPress={() => {
+          if (viewMode === 'leads') router.push('/add-lead');
+          else if (viewMode === 'customers') router.push('/add-customer');
+          else router.push('/add-sub' as any);
+        }}
         activeOpacity={0.8}
       >
         <FontAwesome name="plus" size={20} color="#FFF" />
@@ -400,7 +528,39 @@ export default function LeadsScreen() {
             { alternateEmail: (selectedLead! as any).alternate_email, companyName: (selectedLead! as any).company_name }
           )}
 
+          {/* Linked Projects — shows projects tied to this contact */}
+          {(() => {
+            const linked = projects.filter((p) => p.lead_id === selectedLead!.id);
+            if (linked.length === 0) return null;
+            return (
+              <View style={styles.contactCard}>
+                <Text style={styles.contactCardTitle}>Linked Projects</Text>
+                {linked.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: BNG_COLORS.border }}
+                    onPress={() => router.push(`/project/${p.id}` as any)}
+                  >
+                    <FontAwesome name="briefcase" size={14} color={BNG_COLORS.primary} style={{ marginRight: 10 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: BNG_COLORS.text }}>{p.title}</Text>
+                      <Text style={{ fontSize: 12, color: BNG_COLORS.textMuted }}>{p.status} • {p.progress}%</Text>
+                    </View>
+                    <FontAwesome name="chevron-right" size={12} color={BNG_COLORS.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            );
+          })()}
+
           <View style={styles.actionsCard}>
+            <TouchableOpacity
+              style={[styles.secondaryAction, { marginBottom: 12 }]}
+              onPress={() => router.push({ pathname: '/edit-lead', params: { id: selectedLead!.id } } as any)}
+            >
+              <FontAwesome name="pencil" size={18} color={BNG_COLORS.primary} style={{ marginRight: 10 }} />
+              <Text style={styles.secondaryActionText}>Edit Lead</Text>
+            </TouchableOpacity>
             {selectedLead!.status !== 'converted' && (
               <TouchableOpacity
                 style={[styles.primaryAction, { marginBottom: 16, backgroundColor: BNG_COLORS.success }]}
@@ -412,7 +572,7 @@ export default function LeadsScreen() {
             )}
             <TouchableOpacity
               style={styles.primaryAction}
-              onPress={() => router.push('/add-project')}
+              onPress={() => router.push({ pathname: '/add-project', params: { contactId: selectedLead!.id, contactType: 'lead' } } as any)}
             >
               <FontAwesome name="file-text-o" size={18} color="#FFF" style={{ marginRight: 10 }} />
               <Text style={styles.primaryActionText}>Create Project</Text>
@@ -431,6 +591,13 @@ export default function LeadsScreen() {
                 <Text style={styles.secondaryActionText}>Text</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={[styles.secondaryAction, { marginTop: 16, borderWidth: 1, borderColor: BNG_COLORS.accent }]}
+              onPress={() => handleDeleteLead(selectedLead!.id)}
+            >
+              <FontAwesome name="trash-o" size={18} color={BNG_COLORS.accent} style={{ marginRight: 10 }} />
+              <Text style={[styles.secondaryActionText, { color: BNG_COLORS.accent }]}>Delete Lead</Text>
+            </TouchableOpacity>
           </View>
         </View>
       ) : showCustomerDetail ? (
@@ -460,8 +627,40 @@ export default function LeadsScreen() {
             }
           )}
 
+          {/* Linked Projects — shows projects tied to this customer */}
+          {(() => {
+            const linked = projects.filter((p) => p.customer_id === selectedCustomer!.id);
+            if (linked.length === 0) return null;
+            return (
+              <View style={styles.contactCard}>
+                <Text style={styles.contactCardTitle}>Linked Projects</Text>
+                {linked.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: BNG_COLORS.border }}
+                    onPress={() => router.push(`/project/${p.id}` as any)}
+                  >
+                    <FontAwesome name="briefcase" size={14} color={BNG_COLORS.primary} style={{ marginRight: 10 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: BNG_COLORS.text }}>{p.title}</Text>
+                      <Text style={{ fontSize: 12, color: BNG_COLORS.textMuted }}>{p.status} • {p.progress}%</Text>
+                    </View>
+                    <FontAwesome name="chevron-right" size={12} color={BNG_COLORS.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            );
+          })()}
+
           <View style={styles.actionsCard}>
-            <TouchableOpacity style={styles.primaryAction} onPress={() => router.push('/add-project')}>
+            <TouchableOpacity
+              style={[styles.secondaryAction, { marginBottom: 12 }]}
+              onPress={() => router.push({ pathname: '/edit-customer', params: { id: selectedCustomer!.id } } as any)}
+            >
+              <FontAwesome name="pencil" size={18} color={BNG_COLORS.primary} style={{ marginRight: 10 }} />
+              <Text style={styles.secondaryActionText}>Edit Customer</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.primaryAction} onPress={() => router.push({ pathname: '/add-project', params: { contactId: selectedCustomer!.id, contactType: 'customer' } } as any)}>
               <FontAwesome name="file-text-o" size={18} color="#FFF" style={{ marginRight: 10 }} />
               <Text style={styles.primaryActionText}>Create Project</Text>
             </TouchableOpacity>
@@ -479,6 +678,13 @@ export default function LeadsScreen() {
                 <Text style={styles.secondaryActionText}>Text</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={[styles.secondaryAction, { marginTop: 16, borderWidth: 1, borderColor: BNG_COLORS.accent }]}
+              onPress={() => handleDeleteCustomer(selectedCustomer!.id)}
+            >
+              <FontAwesome name="trash-o" size={18} color={BNG_COLORS.accent} style={{ marginRight: 10 }} />
+              <Text style={[styles.secondaryActionText, { color: BNG_COLORS.accent }]}>Delete Customer</Text>
+            </TouchableOpacity>
           </View>
         </View>
       ) : (

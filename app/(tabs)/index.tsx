@@ -7,10 +7,26 @@ import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
 import { useBreakpoint, useWindowDimensions } from '../../lib/hooks';
-import { fetchDashboardStats, fetchProjects, DashboardStats } from '../../lib/data';
+import {
+  fetchDashboardStats, fetchProjects, fetchLeads, fetchCustomers, fetchEvents,
+  fetchSubcontractors, DashboardStats,
+} from '../../lib/data';
+import { Database } from '../../types/database';
+
+type EventRow = Database['public']['Tables']['events']['Row'];
 import { syncOfflineLeads } from '../../lib/offline';
 
-type ProjectItem = { id: string; title: string; status: string; phase: string | null; start_date: string | null; created_at: string };
+type ProjectItem = {
+  id: string;
+  title: string;
+  status: string;
+  phase: string | null;
+  start_date: string | null;
+  created_at: string;
+  lead_id: string | null;
+  customer_id: string | null;
+  progress?: number | null;
+};
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -26,12 +42,35 @@ export default function DashboardScreen() {
     totalLeads: 0, newLeads: 0, totalCustomers: 0,
   });
   const [projects, setProjects] = useState<ProjectItem[]>([]);
+  // Contact name lookup for showing who each project belongs to
+  const [contactNames, setContactNames] = useState<Record<string, string>>({});
+  const [crewCount, setCrewCount] = useState(0);
+  const [upcomingEvents, setUpcomingEvents] = useState<EventRow[]>([]);
 
   const loadData = useCallback(async () => {
     try {
-      const [s, p] = await Promise.all([fetchDashboardStats(), fetchProjects()]);
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const twoWeeks = new Date(today);
+      twoWeeks.setDate(twoWeeks.getDate() + 14);
+      const endStr = twoWeeks.toISOString().slice(0, 10);
+
+      const [s, p, leads, customers, subs, evs] = await Promise.all([
+        fetchDashboardStats(),
+        fetchProjects(),
+        fetchLeads(),
+        fetchCustomers(),
+        fetchSubcontractors().catch(() => []),
+        fetchEvents(todayStr, endStr).catch(() => [] as EventRow[]),
+      ]);
       setStats(s);
-      setProjects(p);
+      setProjects(p as ProjectItem[]);
+      const names: Record<string, string> = {};
+      leads.forEach((l) => { names[l.id] = l.name; });
+      customers.forEach((c) => { names[c.id] = c.name; });
+      setContactNames(names);
+      setCrewCount(subs.length);
+      setUpcomingEvents((evs as EventRow[]).slice(0, 6));
     } catch { /* Supabase may not be ready yet */ }
   }, []);
 
@@ -75,12 +114,70 @@ export default function DashboardScreen() {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   };
 
-  // ── Derived stat cards ──
-  const statCards = [
-    { label: 'Total Projects', value: String(stats.totalProjects), footer: `${stats.totalCustomers} customers, ${stats.totalLeads} leads`, primary: true },
-    { label: 'Active Projects', value: String(stats.activeProjects), footer: 'Currently in progress', primary: false },
-    { label: 'Completed', value: String(stats.completedProjects), footer: 'Finished projects', primary: false },
-    { label: 'New Leads', value: String(stats.newLeads), footer: 'Waiting for follow-up', primary: false },
+  // Stat cards — tap navigates to the matching screen (filter/tab where useful)
+  type StatNav =
+    | { kind: 'projects'; filter: 'all' | 'active' | 'completed' | 'pending' }
+    | { kind: 'leads' }
+    | { kind: 'crew' };
+
+  const onStatPress = (nav: StatNav) => {
+    if (nav.kind === 'projects') {
+      router.push({ pathname: '/projects', params: { filter: nav.filter } } as any);
+    } else if (nav.kind === 'leads') {
+      router.push({ pathname: '/leads', params: { tab: 'leads' } } as any);
+    } else {
+      router.push('/crew' as any);
+    }
+  };
+
+  const statCards: Array<{
+    label: string;
+    value: string;
+    footer: string;
+    primary: boolean;
+    icon: React.ComponentProps<typeof FontAwesome>['name'];
+    nav: StatNav;
+  }> = [
+    {
+      label: 'Total projects',
+      value: String(stats.totalProjects),
+      footer: `${stats.activeProjects} active • ${stats.pendingProjects} pending • ${stats.completedProjects} done`,
+      primary: true,
+      icon: 'briefcase',
+      nav: { kind: 'projects', filter: 'all' },
+    },
+    {
+      label: 'Active jobs',
+      value: String(stats.activeProjects),
+      footer: 'In progress right now',
+      primary: false,
+      icon: 'play-circle',
+      nav: { kind: 'projects', filter: 'active' },
+    },
+    {
+      label: 'Completed',
+      value: String(stats.completedProjects),
+      footer: 'Marked complete',
+      primary: false,
+      icon: 'check-circle',
+      nav: { kind: 'projects', filter: 'completed' },
+    },
+    {
+      label: 'New leads',
+      value: String(stats.newLeads),
+      footer: `Of ${stats.totalLeads} total — needs first contact`,
+      primary: false,
+      icon: 'user-plus',
+      nav: { kind: 'leads' },
+    },
+    {
+      label: 'Crew roster',
+      value: String(crewCount),
+      footer: 'Subcontractors on file',
+      primary: false,
+      icon: 'wrench',
+      nav: { kind: 'crew' },
+    },
   ];
 
   // ── Project Analytics: real activity this week (projects created per day) ──
@@ -136,7 +233,7 @@ export default function DashboardScreen() {
         <View style={styles.heroText}>
           <Text style={[styles.heroTitle, isMobile && styles.heroTitleMobile]}>Dashboard</Text>
           <Text style={[styles.heroSubtitle, isMobile && styles.heroSubtitleMobile]}>
-            Plan, prioritize, and accomplish your tasks.
+            Jobs, leads, and crew at a glance — tap any card to dig in.
           </Text>
         </View>
         <View style={[styles.heroActions, isMobile && styles.heroActionsMobile]}>
@@ -163,20 +260,28 @@ export default function DashboardScreen() {
       {/* ── Stats Grid ── */}
       <View style={[styles.statsGrid, isMobile && styles.statsGridMobile]}>
         {statCards.map((stat, i) => (
-          <View
+          <TouchableOpacity
             key={i}
+            activeOpacity={0.82}
+            onPress={() => onStatPress(stat.nav)}
             style={[
               styles.statCard,
               stat.primary && styles.statCardPrimary,
               isMobile && { width: statCardWidth },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel={`${stat.label}: ${stat.value}. ${stat.footer}`}
           >
             <View style={styles.statHeader}>
-              <Text style={stat.primary ? styles.statTitleLight : styles.statTitle} numberOfLines={1}>
+              <Text style={stat.primary ? styles.statTitleLight : styles.statTitle} numberOfLines={2}>
                 {stat.label}
               </Text>
-              <View style={stat.primary ? styles.trendArrowLight : styles.trendArrow}>
-                <FontAwesome name="arrow-up" size={10} color={stat.primary ? BNG_COLORS.primary : BNG_COLORS.text} />
+              <View style={stat.primary ? styles.statIconWrapLight : styles.statIconWrap}>
+                <FontAwesome
+                  name={stat.icon}
+                  size={14}
+                  color={stat.primary ? BNG_COLORS.primary : BNG_COLORS.textMuted}
+                />
               </View>
             </View>
             <Text style={[stat.primary ? styles.statValueLight : styles.statValue, isMobile && styles.statValueMobile]}>
@@ -186,8 +291,14 @@ export default function DashboardScreen() {
               <Text style={stat.primary ? styles.statFooterTextLight : styles.statFooterText} numberOfLines={2}>
                 {stat.footer}
               </Text>
+              <FontAwesome
+                name="chevron-right"
+                size={10}
+                color={stat.primary ? 'rgba(255,255,255,0.5)' : BNG_COLORS.textMuted}
+                style={{ marginLeft: 6 }}
+              />
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
 
@@ -198,8 +309,8 @@ export default function DashboardScreen() {
         <View style={[styles.column, isDesktop && styles.columnLeft]}>
           {/* Analytics Chart - projects created per day this week */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Project Analytics</Text>
-            <Text style={styles.chartSubtitle}>Projects created this week</Text>
+            <Text style={styles.cardTitle}>New projects this week</Text>
+            <Text style={styles.chartSubtitle}>Count of projects added each day (Sun–Sat)</Text>
             <View style={styles.chartContainer}>
               {barData.map((bar, i) => (
                 <View key={i} style={styles.barCol}>
@@ -220,14 +331,48 @@ export default function DashboardScreen() {
               ))}
             </View>
             {maxCount === 0 && (
-              <Text style={styles.chartEmpty}>No projects created this week yet.</Text>
+              <Text style={styles.chartEmpty}>No new projects added this calendar week.</Text>
             )}
           </View>
 
-          {/* Recent Activity -- shows latest projects */}
+          {/* Upcoming calendar (next 2 weeks) */}
           <View style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Recent Activity</Text>
+              <Text style={styles.cardTitle}>Coming up</Text>
+              <TouchableOpacity style={styles.outlineButton} onPress={() => router.push('/calendar')}>
+                <Text style={styles.outlineButtonText}>Calendar</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.chartSubtitle}>Next 14 days</Text>
+            {upcomingEvents.length === 0 ? (
+              <Text style={styles.chartEmpty}>No events scheduled. Add one from Quick Actions.</Text>
+            ) : (
+              <View style={styles.eventMiniList}>
+                {upcomingEvents.map((ev) => (
+                  <TouchableOpacity
+                    key={ev.id}
+                    style={styles.eventMiniRow}
+                    onPress={() => router.push('/calendar')}
+                    activeOpacity={0.7}
+                  >
+                    <FontAwesome name="calendar" size={12} color={BNG_COLORS.primary} style={{ marginRight: 10 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.eventMiniTitle} numberOfLines={1}>{ev.title}</Text>
+                      <Text style={styles.eventMiniDate}>
+                        {ev.event_date}
+                        {ev.start_time ? ` · ${ev.start_time}` : ''}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Recent projects (newest first) */}
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Recent projects</Text>
               <TouchableOpacity
                 style={styles.outlineButton}
                 onPress={() => router.push('/projects')}
@@ -241,7 +386,9 @@ export default function DashboardScreen() {
                   No projects yet. Tap "Add Project" to get started.
                 </Text>
               )}
-              {projects.slice(0, 3).map((p) => (
+              {projects.slice(0, 3).map((p) => {
+                const cName = p.lead_id ? contactNames[p.lead_id] : p.customer_id ? contactNames[p.customer_id] : null;
+                return (
                 <TouchableOpacity
                   key={p.id}
                   style={styles.teamItem}
@@ -253,7 +400,10 @@ export default function DashboardScreen() {
                   </View>
                   <View style={styles.teamInfo}>
                     <Text style={styles.teamName} numberOfLines={1}>{p.title}</Text>
-                    <Text style={styles.teamRole} numberOfLines={1}>{p.phase || 'Planning'} Phase</Text>
+                    <Text style={styles.teamRole} numberOfLines={1}>
+                      {cName ? `${cName} · ` : ''}
+                      {p.phase || 'Planning'} · {typeof p.progress === 'number' ? `${p.progress}%` : '0%'}
+                    </Text>
                   </View>
                   <View style={[styles.statusBadge, {
                     backgroundColor: p.status === 'active' ? `${BNG_COLORS.success}15` :
@@ -267,7 +417,8 @@ export default function DashboardScreen() {
                     </Text>
                   </View>
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
           </View>
         </View>
@@ -294,37 +445,90 @@ export default function DashboardScreen() {
               <FontAwesome name="calendar-plus-o" size={14} color="#FFF" style={{ marginRight: 8 }} />
               <Text style={styles.meetingButtonText}>Add Event</Text>
             </TouchableOpacity>
+            <View style={{ height: 10 }} />
+            <TouchableOpacity
+              style={[styles.meetingButton, { backgroundColor: '#059669' }]}
+              activeOpacity={0.8}
+              onPress={() => router.push('/message-generator' as any)}
+            >
+              <FontAwesome name="envelope" size={14} color="#FFF" style={{ marginRight: 8 }} />
+              <Text style={styles.meetingButtonText}>Message Generator</Text>
+            </TouchableOpacity>
+            <View style={{ height: 10 }} />
+            <TouchableOpacity
+              style={[styles.meetingButton, { backgroundColor: '#D97706' }]}
+              activeOpacity={0.8}
+              onPress={() => router.push('/crew' as any)}
+            >
+              <FontAwesome name="wrench" size={14} color="#FFF" style={{ marginRight: 8 }} />
+              <Text style={styles.meetingButtonText}>View Crew</Text>
+            </TouchableOpacity>
+            <View style={{ height: 10 }} />
+            <TouchableOpacity
+              style={[styles.meetingButton, { backgroundColor: BNG_COLORS.surface, borderWidth: 1, borderColor: BNG_COLORS.border }]}
+              activeOpacity={0.8}
+              onPress={() => router.push('/leads')}
+            >
+              <FontAwesome name="address-book" size={14} color={BNG_COLORS.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.meetingButtonText, { color: BNG_COLORS.text }]}>Contacts & leads</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Project Progress */}
+          {/* Pipeline: counts match stat cards — easy to read */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Project Progress</Text>
-            <View style={styles.progressContainer}>
-              <View style={styles.donutWrapper}>
-                <View style={styles.donutOuter}>
-                  <View style={styles.donutInner}>
-                    <Text style={styles.donutValue}>
-                      {stats.totalProjects > 0
-                        ? `${Math.round((stats.completedProjects / stats.totalProjects) * 100)}%`
-                        : '0%'}
-                    </Text>
-                    <Text style={styles.donutLabel}>Completed</Text>
-                  </View>
+            <Text style={styles.cardTitle}>Project pipeline</Text>
+            <Text style={styles.chartSubtitle}>By status (same as top stat cards)</Text>
+            {stats.totalProjects === 0 ? (
+              <Text style={styles.chartEmpty}>No projects yet. Add your first job above.</Text>
+            ) : (
+              <>
+                <View style={styles.pipelineBar}>
+                  {stats.completedProjects > 0 && (
+                    <View
+                      style={[
+                        styles.pipelineSeg,
+                        {
+                          flex: stats.completedProjects,
+                          backgroundColor: BNG_COLORS.info,
+                        },
+                      ]}
+                    />
+                  )}
+                  {stats.activeProjects > 0 && (
+                    <View
+                      style={[
+                        styles.pipelineSeg,
+                        { flex: stats.activeProjects, backgroundColor: BNG_COLORS.success },
+                      ]}
+                    />
+                  )}
+                  {stats.pendingProjects > 0 && (
+                    <View
+                      style={[
+                        styles.pipelineSeg,
+                        { flex: stats.pendingProjects, backgroundColor: BNG_COLORS.warning },
+                      ]}
+                    />
+                  )}
                 </View>
-              </View>
-              <View style={styles.legendRow}>
-                {[
-                  { color: BNG_COLORS.primaryDark, label: `Completed (${stats.completedProjects})` },
-                  { color: BNG_COLORS.primary, label: `Active (${stats.activeProjects})` },
-                  { color: BNG_COLORS.border, label: `Pending (${stats.pendingProjects})` },
-                ].map((l) => (
-                  <View key={l.label} style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: l.color }]} />
-                    <Text style={styles.legendText}>{l.label}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
+                <Text style={styles.pipelineSummary}>
+                  {stats.completedProjects} completed · {stats.activeProjects} active · {stats.pendingProjects} pending
+                  {' · '}{stats.totalProjects} total
+                </Text>
+                <View style={styles.legendRow}>
+                  {[
+                    { color: BNG_COLORS.info, label: `Completed (${stats.completedProjects})` },
+                    { color: BNG_COLORS.success, label: `Active (${stats.activeProjects})` },
+                    { color: BNG_COLORS.warning, label: `Pending (${stats.pendingProjects})` },
+                  ].map((l) => (
+                    <View key={l.label} style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: l.color }]} />
+                      <Text style={styles.legendText}>{l.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
           </View>
         </View>
 
@@ -361,7 +565,8 @@ export default function DashboardScreen() {
                   <View style={styles.projectListInfo}>
                     <Text style={styles.projectListTitle} numberOfLines={1}>{p.title}</Text>
                     <Text style={styles.projectListDate}>
-                      {p.start_date ? `Start: ${p.start_date}` : p.status}
+                      {typeof p.progress === 'number' ? `${p.progress}% done` : '0% done'}
+                      {p.start_date ? ` · Start ${p.start_date}` : ` · ${p.status}`}
                     </Text>
                   </View>
                   <FontAwesome name="chevron-right" size={12} color={BNG_COLORS.textMuted} />
@@ -372,7 +577,8 @@ export default function DashboardScreen() {
 
           {/* Time Tracker -- fully functional */}
           <View style={[styles.card, styles.trackerCard]}>
-            <Text style={styles.trackerTitle}>Time Tracker</Text>
+            <Text style={styles.trackerTitle}>Time tracker</Text>
+            <Text style={styles.trackerHint}>On-device only — not saved to a project yet</Text>
             <Text style={styles.trackerTime}>{formatTime(timerSeconds)}</Text>
             <View style={styles.trackerControls}>
               {!timerRunning ? (
@@ -428,19 +634,19 @@ const styles = StyleSheet.create({
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 28 },
   statsGridMobile: { gap: 12, marginBottom: 20 },
   statCard: {
-    flex: 1, minWidth: 180, backgroundColor: BNG_COLORS.surface,
+    flex: 1, minWidth: 140, maxWidth: 220, backgroundColor: BNG_COLORS.surface,
     borderRadius: 20, padding: 20, ...SHADOWS.sm,
   },
   statCardPrimary: { backgroundColor: BNG_COLORS.primaryDark },
   statHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   statTitle: { fontSize: 13, fontWeight: '600', color: BNG_COLORS.text, flex: 1, marginRight: 4 },
   statTitleLight: { fontSize: 13, fontWeight: '600', color: '#FFF', flex: 1, marginRight: 4 },
-  trendArrow: {
-    width: 26, height: 26, borderRadius: 13, borderWidth: 1, borderColor: BNG_COLORS.border,
+  statIconWrap: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: BNG_COLORS.background,
     alignItems: 'center', justifyContent: 'center',
   },
-  trendArrowLight: {
-    width: 26, height: 26, borderRadius: 13, backgroundColor: '#FFF',
+  statIconWrapLight: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center', justifyContent: 'center',
   },
   statValue: { fontSize: 36, fontWeight: '800', color: BNG_COLORS.text, marginBottom: 12, letterSpacing: -1 },
@@ -517,7 +723,14 @@ const styles = StyleSheet.create({
   projectListTitle: { fontSize: 14, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 2 },
   projectListDate: { fontSize: 12, color: BNG_COLORS.textMuted },
   trackerCard: { backgroundColor: BNG_COLORS.primaryDark, alignItems: 'center', paddingVertical: 28 },
-  trackerTitle: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '600', marginBottom: 12 },
+  trackerTitle: { fontSize: 13, color: 'rgba(255,255,255,0.9)', fontWeight: '700', marginBottom: 4 },
+  trackerHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.55)',
+    textAlign: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 8,
+  },
   trackerTime: { fontSize: 36, fontWeight: '800', color: '#FFF', letterSpacing: 2, marginBottom: 20 },
   trackerControls: { flexDirection: 'row', gap: 14 },
   trackerBtn: {

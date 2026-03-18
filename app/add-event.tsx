@@ -6,9 +6,10 @@ import {
 import { useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../lib/theme';
-import { createEvent, fetchProjects } from '../lib/data';
+import { createEvent, fetchProjects, fetchLeads, fetchCustomers } from '../lib/data';
+import { DatePickerField } from '../components/DatePickerField';
 
-type ProjectOption = { id: string; title: string };
+type ProjectOption = { id: string; title: string; contactName: string | null };
 
 const EVENT_TYPES = ['walkthrough', 'meeting', 'review', 'inspection', 'other'] as const;
 
@@ -26,8 +27,18 @@ export default function AddEventScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchProjects()
-      .then(data => setProjects(data.map(p => ({ id: p.id, title: p.title }))))
+    // Load projects with contact names so we can auto-fill client name
+    Promise.all([fetchProjects(), fetchLeads(), fetchCustomers()])
+      .then(([projData, leadsData, custData]) => {
+        const names: Record<string, string> = {};
+        leadsData.forEach((l) => { names[l.id] = l.name; });
+        custData.forEach((c) => { names[c.id] = c.name; });
+        setProjects(projData.map(p => ({
+          id: p.id,
+          title: p.title,
+          contactName: (p.lead_id ? names[p.lead_id] : p.customer_id ? names[p.customer_id] : null) ?? null,
+        })));
+      })
       .catch(() => {});
   }, []);
 
@@ -51,12 +62,9 @@ export default function AddEventScreen() {
         client_name: clientName.trim() || null,
         project_id: selectedProjectId,
       });
-      Alert.alert('Event Created', `"${title}" has been added to the calendar.`, [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      router.replace('/calendar' as any);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to create event.');
-    } finally {
       setSaving(false);
     }
   };
@@ -88,12 +96,9 @@ export default function AddEventScreen() {
 
           {/* Date */}
           <Text style={styles.label}>Date *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={BNG_COLORS.textMuted}
+          <DatePickerField
             value={eventDate}
-            onChangeText={setEventDate}
+            onChange={setEventDate}
           />
 
           {/* Time Row */}
@@ -169,9 +174,17 @@ export default function AddEventScreen() {
                 <TouchableOpacity
                   key={p.id}
                   style={[styles.pickerItem, selectedProjectId === p.id && styles.pickerItemActive]}
-                  onPress={() => { setSelectedProjectId(p.id); setShowProjectPicker(false); }}
+                  onPress={() => {
+                    setSelectedProjectId(p.id);
+                    setShowProjectPicker(false);
+                    // Auto-fill client name from the project's linked contact
+                    if (p.contactName && !clientName) setClientName(p.contactName);
+                  }}
                 >
                   <Text style={styles.pickerText}>{p.title}</Text>
+                  {p.contactName && (
+                    <Text style={{ fontSize: 12, color: BNG_COLORS.textMuted, marginTop: 2 }}>{p.contactName}</Text>
+                  )}
                 </TouchableOpacity>
               ))}
             </View>

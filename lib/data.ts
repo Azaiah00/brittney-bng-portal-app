@@ -9,6 +9,7 @@ type LeadSourceRow = Database['public']['Tables']['lead_sources']['Row'];
 type LeadSourceInsert = Database['public']['Tables']['lead_sources']['Insert'];
 type LeadRow = Database['public']['Tables']['leads']['Row'];
 type LeadInsert = Database['public']['Tables']['leads']['Insert'];
+type LeadUpdate = Database['public']['Tables']['leads']['Update'];
 type CustomerRow = Database['public']['Tables']['customers']['Row'];
 type CustomerInsert = Database['public']['Tables']['customers']['Insert'];
 type CustomerUpdate = Database['public']['Tables']['customers']['Update'];
@@ -21,6 +22,18 @@ type EstimateRow = Database['public']['Tables']['estimates']['Row'];
 type EstimateInsert = Database['public']['Tables']['estimates']['Insert'];
 type EventRow = Database['public']['Tables']['events']['Row'];
 type EventInsert = Database['public']['Tables']['events']['Insert'];
+type ProposalRow = Database['public']['Tables']['proposals']['Row'];
+type ProposalInsert = Database['public']['Tables']['proposals']['Insert'];
+type ProposalUpdate = Database['public']['Tables']['proposals']['Update'];
+type SubcontractorRow = Database['public']['Tables']['subcontractors']['Row'];
+type SubcontractorInsert = Database['public']['Tables']['subcontractors']['Insert'];
+type SubcontractorUpdate = Database['public']['Tables']['subcontractors']['Update'];
+type ChecklistRow = Database['public']['Tables']['checklists']['Row'];
+type ChecklistInsert = Database['public']['Tables']['checklists']['Insert'];
+type ChecklistUpdate = Database['public']['Tables']['checklists']['Update'];
+type PunchItemRow = Database['public']['Tables']['punch_items']['Row'];
+type PunchItemInsert = Database['public']['Tables']['punch_items']['Insert'];
+type PunchItemUpdate = Database['public']['Tables']['punch_items']['Update'];
 
 // ─────────────────────────────────────────────────────────────
 // LEADS
@@ -33,6 +46,12 @@ export async function fetchLeads(): Promise<LeadRow[]> {
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as LeadRow[];
+}
+
+export async function fetchLead(id: string): Promise<LeadRow | null> {
+  const { data, error } = await supabase.from('leads').select('*').eq('id', id).single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return (data as LeadRow) ?? null;
 }
 
 export async function createLead(lead: LeadInsert): Promise<LeadRow> {
@@ -53,6 +72,11 @@ export async function updateLeadStatus(
     .from('leads')
     .update({ status })
     .eq('id', id);
+  if (error) throw error;
+}
+
+export async function updateLead(id: string, updates: LeadUpdate): Promise<void> {
+  const { error } = await supabase.from('leads').update(updates).eq('id', id);
   if (error) throw error;
 }
 
@@ -95,6 +119,12 @@ export async function fetchCustomers(): Promise<CustomerRow[]> {
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as CustomerRow[];
+}
+
+export async function fetchCustomer(id: string): Promise<CustomerRow | null> {
+  const { data, error } = await supabase.from('customers').select('*').eq('id', id).single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return (data as CustomerRow) ?? null;
 }
 
 export async function createCustomer(customer: CustomerInsert): Promise<CustomerRow> {
@@ -202,6 +232,11 @@ export async function updateProject(
   if (error) throw error;
 }
 
+export async function deleteProject(id: string): Promise<void> {
+  const { error } = await supabase.from('projects').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // ─────────────────────────────────────────────────────────────
 // LOGS (project timeline entries)
 // ─────────────────────────────────────────────────────────────
@@ -284,6 +319,35 @@ export async function deleteEvent(id: string): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────
+// PROPOSALS (contract / proposal documents)
+// ─────────────────────────────────────────────────────────────
+
+export async function fetchProposals(projectId: string): Promise<ProposalRow[]> {
+  const { data, error } = await supabase
+    .from('proposals')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ProposalRow[];
+}
+
+export async function saveProposal(proposal: ProposalInsert): Promise<ProposalRow> {
+  const { data, error } = await supabase
+    .from('proposals')
+    .insert([proposal])
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ProposalRow;
+}
+
+export async function updateProposal(id: string, updates: ProposalUpdate): Promise<void> {
+  const { error } = await supabase.from('proposals').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
+// ─────────────────────────────────────────────────────────────
 // DASHBOARD STATS (aggregated counts)
 // ─────────────────────────────────────────────────────────────
 
@@ -317,4 +381,108 @@ export async function fetchDashboardStats(): Promise<DashboardStats> {
     newLeads: leads.filter((l: any) => l.status === 'new').length,
     totalCustomers: customers.length,
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// SUBCONTRACTORS (crew roster)
+// ─────────────────────────────────────────────────────────────
+
+export async function fetchSubcontractors(): Promise<SubcontractorRow[]> {
+  const { data, error } = await supabase
+    .from('subcontractors')
+    .select('*')
+    .order('name', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as SubcontractorRow[];
+}
+
+export async function fetchSubcontractor(id: string): Promise<SubcontractorRow | null> {
+  const { data, error } = await supabase.from('subcontractors').select('*').eq('id', id).single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return (data as SubcontractorRow) ?? null;
+}
+
+export async function createSubcontractor(sub: SubcontractorInsert): Promise<SubcontractorRow> {
+  const { data, error } = await supabase
+    .from('subcontractors')
+    .insert([sub])
+    .select()
+    .single();
+  if (error) throw error;
+  return data as SubcontractorRow;
+}
+
+export async function updateSubcontractor(id: string, updates: SubcontractorUpdate): Promise<void> {
+  const { error } = await supabase.from('subcontractors').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteSubcontractor(id: string): Promise<void> {
+  const { error } = await supabase.from('subcontractors').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ─────────────────────────────────────────────────────────────
+// CHECKLISTS (per-project job checklist)
+// ─────────────────────────────────────────────────────────────
+
+export async function fetchChecklist(projectId: string): Promise<ChecklistRow | null> {
+  const { data, error } = await supabase
+    .from('checklists')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ChecklistRow) ?? null;
+}
+
+export async function createChecklist(checklist: ChecklistInsert): Promise<ChecklistRow> {
+  const { data, error } = await supabase
+    .from('checklists')
+    .insert([checklist])
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ChecklistRow;
+}
+
+export async function updateChecklist(id: string, updates: ChecklistUpdate): Promise<void> {
+  const { error } = await supabase.from('checklists').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
+// ─────────────────────────────────────────────────────────────
+// PUNCH ITEMS (per-project punch list)
+// ─────────────────────────────────────────────────────────────
+
+export async function fetchPunchItems(projectId: string): Promise<PunchItemRow[]> {
+  const { data, error } = await supabase
+    .from('punch_items')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as PunchItemRow[];
+}
+
+export async function createPunchItem(item: PunchItemInsert): Promise<PunchItemRow> {
+  const { data, error } = await supabase
+    .from('punch_items')
+    .insert([item])
+    .select()
+    .single();
+  if (error) throw error;
+  return data as PunchItemRow;
+}
+
+export async function updatePunchItem(id: string, updates: PunchItemUpdate): Promise<void> {
+  const { error } = await supabase.from('punch_items').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deletePunchItem(id: string): Promise<void> {
+  const { error } = await supabase.from('punch_items').delete().eq('id', id);
+  if (error) throw error;
 }

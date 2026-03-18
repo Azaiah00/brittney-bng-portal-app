@@ -71,8 +71,13 @@ export default function CalendarScreen() {
       const evts = await fetchEvents(startStr, endStr);
       setEvents(evts);
 
-      // Milestones from projects with upcoming walkthrough dates
+      // Build project lookup so events can show their project name
       const projects = await fetchProjects();
+      const pMap: Record<string, string> = {};
+      projects.forEach((p) => { pMap[p.id] = p.title; });
+      setProjectMap(pMap);
+
+      // Milestones from projects with upcoming walkthrough dates
       const upcoming = projects
         .filter(p => p.walkthrough_date || p.start_date)
         .map(p => ({
@@ -87,6 +92,9 @@ export default function CalendarScreen() {
   }, [weekOffset]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+
+  // Build project lookup for event → project name linking
+  const [projectMap, setProjectMap] = useState<Record<string, string>>({});
 
   // Filter events for selected day
   const dayEvents = events.filter(e => e.event_date === selectedDateStr);
@@ -217,27 +225,42 @@ export default function CalendarScreen() {
             </View>
           ) : (
             <View style={styles.eventsCard}>
-              {dayEvents.map((event, index) => (
-                <View key={event.id}>
-                  <View style={styles.eventItem}>
-                    <View style={styles.eventTimeColumn}>
-                      <Text style={styles.eventTime}>{event.start_time || '--'}</Text>
-                      {event.end_time && <Text style={styles.eventDuration}>{event.end_time}</Text>}
-                    </View>
-                    <View style={[styles.eventLine, { backgroundColor: EVENT_COLORS[event.event_type] || BNG_COLORS.primary }]} />
-                    <View style={styles.eventContent}>
-                      <Text style={styles.eventTitle}>{event.title}</Text>
-                      <Text style={styles.eventClient}>{event.client_name || 'No client'}</Text>
-                      <View style={[styles.eventTypeBadge, { backgroundColor: `${EVENT_COLORS[event.event_type] || BNG_COLORS.primary}15` }]}>
-                        <Text style={[styles.eventTypeText, { color: EVENT_COLORS[event.event_type] || BNG_COLORS.primary }]}>
-                          {event.event_type.charAt(0).toUpperCase() + event.event_type.slice(1)}
-                        </Text>
+              {dayEvents.map((event, index) => {
+                const linkedProject = event.project_id ? projectMap[event.project_id] : null;
+                return (
+                  <View key={event.id}>
+                    <TouchableOpacity
+                      style={styles.eventItem}
+                      activeOpacity={event.project_id ? 0.7 : 1}
+                      onPress={() => {
+                        if (event.project_id) router.push(`/project/${event.project_id}` as any);
+                      }}
+                    >
+                      <View style={styles.eventTimeColumn}>
+                        <Text style={styles.eventTime}>{event.start_time || '--'}</Text>
+                        {event.end_time && <Text style={styles.eventDuration}>{event.end_time}</Text>}
                       </View>
-                    </View>
+                      <View style={[styles.eventLine, { backgroundColor: EVENT_COLORS[event.event_type] || BNG_COLORS.primary }]} />
+                      <View style={styles.eventContent}>
+                        <Text style={styles.eventTitle}>{event.title}</Text>
+                        <Text style={styles.eventClient}>{event.client_name || 'No client'}</Text>
+                        {linkedProject && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                            <FontAwesome name="briefcase" size={10} color={BNG_COLORS.primary} />
+                            <Text style={{ fontSize: 12, fontWeight: '600', color: BNG_COLORS.primary }}>{linkedProject}</Text>
+                          </View>
+                        )}
+                        <View style={[styles.eventTypeBadge, { backgroundColor: `${EVENT_COLORS[event.event_type] || BNG_COLORS.primary}15` }]}>
+                          <Text style={[styles.eventTypeText, { color: EVENT_COLORS[event.event_type] || BNG_COLORS.primary }]}>
+                            {event.event_type.charAt(0).toUpperCase() + event.event_type.slice(1)}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                    {index < dayEvents.length - 1 && <View style={styles.eventDivider} />}
                   </View>
-                  {index < dayEvents.length - 1 && <View style={styles.eventDivider} />}
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>

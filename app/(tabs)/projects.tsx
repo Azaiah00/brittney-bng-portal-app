@@ -3,7 +3,7 @@ import {
   StyleSheet, View, Text, FlatList, TouchableOpacity,
   SafeAreaView, Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
@@ -21,6 +21,7 @@ const STATUS_CONFIG: Record<string, { bg: string; text: string; icon: string }> 
 
 export default function ProjectsScreen() {
   const router = useRouter();
+  const { filter: filterFromUrl } = useLocalSearchParams<{ filter?: string }>();
   const pad = useResponsivePadding();
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [contactNames, setContactNames] = useState<Record<string, string>>({});
@@ -42,7 +43,16 @@ export default function ProjectsScreen() {
     } catch { /* Supabase may not be ready */ }
   }, []);
 
-  useFocusEffect(useCallback(() => { loadProjects(); }, [loadProjects]));
+  // Dashboard stat cards pass ?filter=active|pending|completed|all
+  useFocusEffect(
+    useCallback(() => {
+      loadProjects();
+      const f = filterFromUrl;
+      if (f === 'active' || f === 'completed' || f === 'pending' || f === 'all') {
+        setFilter(f);
+      }
+    }, [loadProjects, filterFromUrl]),
+  );
 
   const filteredProjects = filter === 'all'
     ? projects

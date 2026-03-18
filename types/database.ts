@@ -258,6 +258,59 @@ export interface Database {
           created_at?: string
         }
       }
+      proposals: {
+        Row: {
+          id: string
+          project_id: string
+          client_name: string | null
+          client_address: string | null
+          scope_of_work: string | null
+          line_items: Json
+          subtotal: number | null
+          tax: number | null
+          total_amount: number | null
+          payment_schedule: Json
+          start_date: string | null
+          completion_date: string | null
+          special_conditions: string | null
+          status: 'draft' | 'sent' | 'accepted' | 'declined'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          client_name?: string | null
+          client_address?: string | null
+          scope_of_work?: string | null
+          line_items?: Json
+          subtotal?: number | null
+          tax?: number | null
+          total_amount?: number | null
+          payment_schedule?: Json
+          start_date?: string | null
+          completion_date?: string | null
+          special_conditions?: string | null
+          status?: 'draft' | 'sent' | 'accepted' | 'declined'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          client_name?: string | null
+          client_address?: string | null
+          scope_of_work?: string | null
+          line_items?: Json
+          subtotal?: number | null
+          tax?: number | null
+          total_amount?: number | null
+          payment_schedule?: Json
+          start_date?: string | null
+          completion_date?: string | null
+          special_conditions?: string | null
+          status?: 'draft' | 'sent' | 'accepted' | 'declined'
+          created_at?: string
+        }
+      }
       events: {
         Row: {
           id: string
@@ -294,6 +347,93 @@ export interface Database {
           project_id?: string | null
           client_name?: string | null
           created_at?: string
+        }
+      }
+      subcontractors: {
+        Row: {
+          id: string
+          company_name: string | null
+          name: string
+          trade: string
+          phone: string | null
+          email: string | null
+          notes: string | null
+          rating: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_name?: string | null
+          name: string
+          trade?: string
+          phone?: string | null
+          email?: string | null
+          notes?: string | null
+          rating?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_name?: string | null
+          name?: string
+          trade?: string
+          phone?: string | null
+          email?: string | null
+          notes?: string | null
+          rating?: number
+          created_at?: string
+        }
+      }
+      checklists: {
+        Row: {
+          id: string
+          project_id: string
+          items: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          items?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          items?: Json
+          created_at?: string
+        }
+      }
+      punch_items: {
+        Row: {
+          id: string
+          project_id: string
+          description: string
+          photo_url: string | null
+          status: 'open' | 'in_progress' | 'resolved'
+          assigned_to: string | null
+          created_at: string
+          resolved_at: string | null
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          description: string
+          photo_url?: string | null
+          status?: 'open' | 'in_progress' | 'resolved'
+          assigned_to?: string | null
+          created_at?: string
+          resolved_at?: string | null
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          description?: string
+          photo_url?: string | null
+          status?: 'open' | 'in_progress' | 'resolved'
+          assigned_to?: string | null
+          created_at?: string
+          resolved_at?: string | null
         }
       }
     }

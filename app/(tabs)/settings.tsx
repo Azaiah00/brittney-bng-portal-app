@@ -3,11 +3,11 @@ import {
   StyleSheet, View, Text, SafeAreaView, TouchableOpacity,
   ScrollView, Platform, Switch, Alert, Linking,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
-import { fetchDashboardStats, DashboardStats } from '../../lib/data';
+import { fetchDashboardStats, DashboardStats, fetchIntegration } from '../../lib/data';
+import { useAuth } from '../../lib/auth';
 
 const PROFILE_SECTIONS = [
   {
@@ -23,7 +23,7 @@ const PROFILE_SECTIONS = [
     items: [
       { id: 'templates', icon: 'file-text-o', label: 'Estimate Templates', hasArrow: true },
       { id: 'team', icon: 'users', label: 'Team Members', hasArrow: true },
-      { id: 'integrations', icon: 'plug', label: 'Integrations', hasArrow: true, badge: '3' },
+      { id: 'integrations', icon: 'plug', label: 'Integrations', hasArrow: true, badge: '4' },
       { id: 'billing', icon: 'credit-card', label: 'Billing & Subscription', hasArrow: true },
     ],
   },
@@ -45,18 +45,25 @@ const PROFILE_SECTIONS = [
 ];
 
 export default function SettingsScreen() {
+  const { user, signOut } = useAuth();
   const [toggles, setToggles] = React.useState({ notifications: true, theme: false });
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [gcalConnected, setGcalConnected] = useState(false);
 
   const toggleSwitch = (id: string) => {
     setToggles(prev => ({ ...prev, [id]: !prev[id as keyof typeof toggles] }));
   };
 
-  // Load real stats
+  // Load real stats and integration status
   useFocusEffect(
     useCallback(() => {
       fetchDashboardStats().then(setStats).catch(() => {});
-    }, [])
+      if (user?.id) {
+        fetchIntegration(user.id, 'google_calendar')
+          .then((int) => setGcalConnected(!!int))
+          .catch(() => {});
+      }
+    }, [user?.id])
   );
 
   // ── Handlers for each settings item ──
@@ -75,7 +82,14 @@ export default function SettingsScreen() {
         Alert.alert('Team Members', 'Team management is coming in a future update.');
         break;
       case 'integrations':
-        Alert.alert('Integrations', 'Current integrations:\n\n1. Supabase (Database)\n2. Gemini AI (Smart Features)\n3. Apple Calendar (Sync)');
+        Alert.alert(
+          'Integrations',
+          `Current integrations:\n\n` +
+          `1. Supabase (Database) — Connected\n` +
+          `2. Gemini AI (Smart Features) — Connected\n` +
+          `3. Google Calendar — ${gcalConnected ? 'Connected' : 'Not Connected'}\n` +
+          `4. SignNow (E-Signatures) — Server-side`
+        );
         break;
       case 'billing':
         Alert.alert('Billing', 'BNG Remodel Pro Plan\nNo charges at this time.');
@@ -107,8 +121,7 @@ export default function SettingsScreen() {
         text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
-          await AsyncStorage.clear();
-          Alert.alert('Logged Out', 'Your session has been cleared.');
+          await signOut();
         },
       },
     ]);
@@ -167,10 +180,14 @@ export default function SettingsScreen() {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarLarge}>
-            <Text style={styles.avatarText}>BR</Text>
+            <Text style={styles.avatarText}>
+              {user?.user_metadata?.full_name
+                ? user.user_metadata.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+                : 'BR'}
+            </Text>
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>Brittney Reader</Text>
+            <Text style={styles.profileName}>{user?.user_metadata?.full_name || 'Brittney Reader'}</Text>
             <Text style={styles.profileRole}>Owner &bull; BNG Remodel</Text>
             <View style={styles.profileBadge}>
               <Text style={styles.profileBadgeText}>Pro Plan</Text>

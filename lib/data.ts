@@ -347,6 +347,83 @@ export async function updateProposal(id: string, updates: ProposalUpdate): Promi
   if (error) throw error;
 }
 
+export async function fetchProposal(id: string): Promise<ProposalRow | null> {
+  const { data, error } = await supabase.from('proposals').select('*').eq('id', id).single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return (data as ProposalRow) ?? null;
+}
+
+// Call the esign-send Edge Function to send a proposal for e-signature
+export async function sendForSignature(
+  proposalId: string,
+  signerEmail: string,
+  signerName: string,
+  pdfHtml?: string
+): Promise<{ signing_link: string; signature_status: string }> {
+  const { data, error } = await supabase.functions.invoke('esign-send', {
+    body: {
+      proposal_id: proposalId,
+      signer_email: signerEmail,
+      signer_name: signerName,
+      pdf_html: pdfHtml,
+    },
+  });
+  if (error) throw error;
+  return data;
+}
+
+// Call the esign-status Edge Function to check signing status
+export async function checkSignatureStatus(
+  proposalId: string
+): Promise<{ signature_status: string; signed: boolean }> {
+  const { data, error } = await supabase.functions.invoke('esign-status', {
+    body: { proposal_id: proposalId },
+  });
+  if (error) throw error;
+  return data;
+}
+
+// ─────────────────────────────────────────────────────────────
+// USER INTEGRATIONS (Google Calendar, etc.)
+// ─────────────────────────────────────────────────────────────
+
+type IntegrationRow = Database['public']['Tables']['user_integrations']['Row'];
+
+export async function fetchIntegration(
+  userId: string,
+  provider: string
+): Promise<IntegrationRow | null> {
+  const { data, error } = await supabase
+    .from('user_integrations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('provider', provider)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as IntegrationRow) ?? null;
+}
+
+export async function disconnectIntegration(
+  userId: string,
+  provider: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('user_integrations')
+    .delete()
+    .eq('user_id', userId)
+    .eq('provider', provider);
+  if (error) throw error;
+}
+
+// Trigger Google Calendar sync via Edge Function
+export async function syncGoogleCalendar(userId: string): Promise<{ synced: number }> {
+  const { data, error } = await supabase.functions.invoke('calendar-sync', {
+    body: { user_id: userId },
+  });
+  if (error) throw error;
+  return data;
+}
+
 // ─────────────────────────────────────────────────────────────
 // DASHBOARD STATS (aggregated counts)
 // ─────────────────────────────────────────────────────────────

@@ -275,6 +275,15 @@ export interface Database {
           special_conditions: string | null
           status: 'draft' | 'sent' | 'accepted' | 'declined'
           created_at: string
+          pdf_url: string | null
+          signnow_document_id: string | null
+          signnow_invite_id: string | null
+          signing_link: string | null
+          signature_status: string | null
+          signer_email: string | null
+          sent_for_signature_at: string | null
+          signed_at: string | null
+          signed_pdf_url: string | null
         }
         Insert: {
           id?: string
@@ -292,6 +301,15 @@ export interface Database {
           special_conditions?: string | null
           status?: 'draft' | 'sent' | 'accepted' | 'declined'
           created_at?: string
+          pdf_url?: string | null
+          signnow_document_id?: string | null
+          signnow_invite_id?: string | null
+          signing_link?: string | null
+          signature_status?: string | null
+          signer_email?: string | null
+          sent_for_signature_at?: string | null
+          signed_at?: string | null
+          signed_pdf_url?: string | null
         }
         Update: {
           id?: string
@@ -309,6 +327,15 @@ export interface Database {
           special_conditions?: string | null
           status?: 'draft' | 'sent' | 'accepted' | 'declined'
           created_at?: string
+          pdf_url?: string | null
+          signnow_document_id?: string | null
+          signnow_invite_id?: string | null
+          signing_link?: string | null
+          signature_status?: string | null
+          signer_email?: string | null
+          sent_for_signature_at?: string | null
+          signed_at?: string | null
+          signed_pdf_url?: string | null
         }
       }
       events: {
@@ -434,6 +461,38 @@ export interface Database {
           assigned_to?: string | null
           created_at?: string
           resolved_at?: string | null
+        }
+      }
+      user_integrations: {
+        Row: {
+          id: string
+          user_id: string
+          provider: string
+          access_token: string | null
+          refresh_token: string | null
+          token_expires_at: string | null
+          calendar_id: string | null
+          connected_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: string
+          access_token?: string | null
+          refresh_token?: string | null
+          token_expires_at?: string | null
+          calendar_id?: string | null
+          connected_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: string
+          access_token?: string | null
+          refresh_token?: string | null
+          token_expires_at?: string | null
+          calendar_id?: string | null
+          connected_at?: string
         }
       }
     }

@@ -1,14 +1,18 @@
 import React, { useState, useCallback } from 'react';
 import {
   StyleSheet, View, Text, SafeAreaView, TouchableOpacity,
-  Alert, Platform, ScrollView,
+  Alert, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+import * as WebBrowser from 'expo-web-browser';
+import { makeRedirectUri } from 'expo-auth-session';
 import { requestCalendarPermissions } from '../../lib/calendar';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
-import { fetchEvents, fetchProjects } from '../../lib/data';
+import { fetchEvents, fetchProjects, fetchIntegration, syncGoogleCalendar, disconnectIntegration } from '../../lib/data';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/auth';
 import { Database } from '../../types/database';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
@@ -42,7 +46,11 @@ function toDateStr(d: Date): string {
 
 export default function CalendarScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const [isSynced, setIsSynced] = useState(false);
+  const [isGcalConnected, setIsGcalConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDayIndex, setSelectedDayIndex] = useState(new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -88,8 +96,13 @@ export default function CalendarScreen() {
         .sort((a, b) => a.date.localeCompare(b.date))
         .slice(0, 3);
       setMilestones(upcoming);
+      // Check Google Calendar connection
+      if (user?.id) {
+        const integration = await fetchIntegration(user.id, 'google_calendar');
+        setIsGcalConnected(!!integration);
+      }
     } catch { /* Supabase may not be ready */ }
-  }, [weekOffset]);
+  }, [weekOffset, user?.id]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
@@ -99,9 +112,91 @@ export default function CalendarScreen() {
   // Filter events for selected day
   const dayEvents = events.filter(e => e.event_date === selectedDateStr);
 
+  // Connect Google Calendar via OAuth
+  const handleConnectGcal = async () => {
+    if (!user?.id) {
+      Alert.alert('Sign In', 'Please sign in first to connect Google Calendar.');
+      return;
+    }
+
+    setIsConnecting(true);
+    try {
+      const redirectUri = makeRedirectUri({ scheme: 'brittanybngremodelapp', path: 'calendar/callback' });
+      const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
+      const scope = 'https://www.googleapis.com/auth/calendar.events';
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
+
+      if (Platform.OS === 'web') {
+        window.location.href = authUrl;
+        return;
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+
+      if (result.type === 'success' && result.url) {
+        const url = new URL(result.url);
+        const code = url.searchParams.get('code');
+
+        if (code) {
+          // Exchange code for tokens via Edge Function
+          const { error } = await supabase.functions.invoke('calendar-connect', {
+            body: { user_id: user.id, code, redirect_uri: redirectUri },
+          });
+          if (error) throw error;
+
+          setIsGcalConnected(true);
+          Alert.alert('Connected!', 'Google Calendar connected successfully.');
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Connection Error', err.message || 'Could not connect Google Calendar.');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  // Sync events to Google Calendar
+  const handleSyncGcal = async () => {
+    if (!user?.id) return;
+    setIsSyncing(true);
+    try {
+      const result = await syncGoogleCalendar(user.id);
+      Alert.alert('Synced!', `${result.synced} events synced to Google Calendar.`);
+    } catch (err: any) {
+      Alert.alert('Sync Error', err.message || 'Could not sync events.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Disconnect Google Calendar
+  const handleDisconnectGcal = () => {
+    Alert.alert('Disconnect', 'Remove Google Calendar connection?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Disconnect',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            if (user?.id) {
+              await supabase.functions.invoke('calendar-disconnect', {
+                body: { user_id: user.id },
+              });
+              setIsGcalConnected(false);
+            }
+          } catch { /* ok */ }
+        },
+      },
+    ]);
+  };
+
+  // Native calendar sync (kept as fallback)
   const handleSync = async () => {
     if (Platform.OS === 'web') {
-      Alert.alert('Not Supported', 'Calendar sync is only available on iOS/iPadOS.');
+      Alert.alert('Not Supported', 'Native calendar sync is only available on iOS/Android.');
       return;
     }
     const granted = await requestCalendarPermissions();
@@ -128,28 +223,60 @@ export default function CalendarScreen() {
             <Text style={styles.title}>Calendar</Text>
             <Text style={styles.subtitle}>Manage your schedule</Text>
           </View>
-          <View style={[styles.syncBadge, !isSynced && styles.syncBadgeError]}>
-            <View style={[styles.syncDot, !isSynced && styles.syncDotError]} />
-            <Text style={[styles.syncText, !isSynced && styles.syncTextError]}>
-              {isSynced ? 'Synced' : 'Not Synced'}
+          <View style={[styles.syncBadge, !isGcalConnected && styles.syncBadgeError]}>
+            <View style={[styles.syncDot, !isGcalConnected && styles.syncDotError]} />
+            <Text style={[styles.syncText, !isGcalConnected && styles.syncTextError]}>
+              {isGcalConnected ? 'Connected' : 'Not Connected'}
             </Text>
           </View>
         </View>
 
-        {/* Calendar Sync Card */}
+        {/* Google Calendar Card */}
         <View style={styles.syncCard}>
           <View style={styles.syncIconContainer}>
-            <FontAwesome name={isSynced ? 'check-circle' : 'calendar-plus-o'} size={32} color={isSynced ? BNG_COLORS.success : BNG_COLORS.accent} />
+            <FontAwesome
+              name={isGcalConnected ? 'check-circle' : 'google'}
+              size={28}
+              color={isGcalConnected ? BNG_COLORS.success : '#4285F4'}
+            />
           </View>
           <View style={styles.syncContent}>
-            <Text style={styles.syncCardTitle}>Apple Calendar</Text>
+            <Text style={styles.syncCardTitle}>Google Calendar</Text>
             <Text style={styles.syncCardText}>
-              {isSynced ? 'Syncing with Apple Calendar.' : 'Enable sync for automatic event creation.'}
+              {isGcalConnected ? 'Connected. Tap Sync to push events.' : 'Connect to sync your BNG events.'}
             </Text>
           </View>
-          {!isSynced && (
-            <TouchableOpacity style={styles.syncButton} onPress={handleSync}>
-              <Text style={styles.syncButtonText}>Enable</Text>
+          {isGcalConnected ? (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                style={styles.syncButton}
+                onPress={handleSyncGcal}
+                disabled={isSyncing}
+              >
+                {isSyncing ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Text style={styles.syncButtonText}>Sync</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.syncButton, { backgroundColor: BNG_COLORS.textMuted }]}
+                onPress={handleDisconnectGcal}
+              >
+                <FontAwesome name="unlink" size={14} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.syncButton, { backgroundColor: '#4285F4' }]}
+              onPress={handleConnectGcal}
+              disabled={isConnecting}
+            >
+              {isConnecting ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.syncButtonText}>Connect</Text>
+              )}
             </TouchableOpacity>
           )}
         </View>

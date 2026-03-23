@@ -12,7 +12,10 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
-import { fetchProject, fetchEstimates, fetchLeads, fetchCustomers, saveProposal } from '../../../lib/data';
+import {
+  fetchProject, fetchEstimates, fetchLeads, fetchCustomers,
+  saveProposal, fetchProposals, sendForSignature, checkSignatureStatus,
+} from '../../../lib/data';
 import { generateContractProposal, ContractLineItem } from '../../../lib/gemini';
 import { BNG_CONTRACT_HTML } from '../../../lib/contract-template';
 import { DatePickerField } from '../../../components/DatePickerField';
@@ -56,6 +59,14 @@ export default function ProposalScreen() {
   const [showPreview, setShowPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // ── E-Signature state ──
+  const [savedProposalId, setSavedProposalId] = useState<string | null>(null);
+  const [signerEmail, setSignerEmail] = useState('');
+  const [signatureStatus, setSignatureStatus] = useState<string>('none');
+  const [signingLink, setSigningLink] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+
   // ── Pre-fill from project + contact data ──
   useEffect(() => {
     if (!id) return;
@@ -97,6 +108,23 @@ export default function ProposalScreen() {
           }
         }
       } catch { /* project may not exist yet */ }
+    })();
+  }, [id]);
+
+  // Load existing proposal if one was saved before (for e-sign status)
+  useEffect(() => {
+    if (!id) return;
+    (async () => {
+      try {
+        const proposals = await fetchProposals(id);
+        if (proposals.length > 0) {
+          const latest = proposals[0];
+          setSavedProposalId(latest.id);
+          setSignatureStatus(latest.signature_status || 'none');
+          setSigningLink(latest.signing_link || null);
+          if (latest.signer_email) setSignerEmail(latest.signer_email);
+        }
+      } catch { /* ok */ }
     })();
   }, [id]);
 
@@ -164,7 +192,7 @@ export default function ProposalScreen() {
     if (!id) return;
     setIsSaving(true);
     try {
-      await saveProposal({
+      const saved = await saveProposal({
         project_id: id,
         client_name: clientName || null,
         client_address: clientAddress || null,
@@ -183,7 +211,8 @@ export default function ProposalScreen() {
         special_conditions: specialConditions || null,
         status: 'draft',
       });
-      Alert.alert('Saved', 'Proposal saved as draft.');
+      setSavedProposalId(saved.id);
+      Alert.alert('Saved', 'Proposal saved as draft. You can now send it for e-signature.');
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to save proposal.');
     } finally {
@@ -367,6 +396,58 @@ ${specialConditions ? `
     } catch (error) {
       Alert.alert('Error', 'Failed to generate PDF.');
       console.error(error);
+    }
+  };
+
+  // ── Send for e-signature ──
+  const handleSendForSignature = async () => {
+    if (!savedProposalId) {
+      Alert.alert('Save First', 'Please save the proposal before sending for signature.');
+      return;
+    }
+    if (!signerEmail.trim()) {
+      Alert.alert('Email Required', 'Enter the client email address to send the signature request.');
+      return;
+    }
+    setIsSending(true);
+    try {
+      const html = buildPdfHtml();
+      const result = await sendForSignature(savedProposalId, signerEmail.trim(), clientName || 'Client', html);
+      setSignatureStatus(result.signature_status);
+      setSigningLink(result.signing_link);
+      Alert.alert('Sent!', 'Signature request sent to ' + signerEmail.trim());
+    } catch (err: any) {
+      Alert.alert('E-Sign Error', err.message || 'Could not send for signature.');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  // ── Refresh e-sign status ──
+  const handleCheckStatus = async () => {
+    if (!savedProposalId) return;
+    setIsCheckingStatus(true);
+    try {
+      const result = await checkSignatureStatus(savedProposalId);
+      setSignatureStatus(result.signature_status);
+      if (result.signed) {
+        Alert.alert('Signed!', 'The client has signed the proposal.');
+      }
+    } catch (err: any) {
+      Alert.alert('Status Error', err.message || 'Could not check status.');
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  // Status badge color/label
+  const getStatusBadge = () => {
+    switch (signatureStatus) {
+      case 'sent': return { color: BNG_COLORS.warning, label: 'Awaiting Signature' };
+      case 'viewed': return { color: BNG_COLORS.info, label: 'Viewed by Client' };
+      case 'signed': return { color: BNG_COLORS.success, label: 'Signed' };
+      case 'declined': return { color: BNG_COLORS.accent, label: 'Declined' };
+      default: return { color: BNG_COLORS.textMuted, label: 'Not Sent' };
     }
   };
 
@@ -585,6 +666,85 @@ ${specialConditions ? `
     </View>
   );
 
+  // ── E-Signature section ──
+  const renderESignSection = () => {
+    const badge = getStatusBadge();
+    return (
+      <View style={styles.card}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <Text style={styles.cardTitle}>E-Signature</Text>
+          <View style={[styles.esignBadge, { backgroundColor: `${badge.color}15` }]}>
+            <View style={[styles.esignDot, { backgroundColor: badge.color }]} />
+            <Text style={[styles.esignBadgeText, { color: badge.color }]}>{badge.label}</Text>
+          </View>
+        </View>
+
+        {signatureStatus === 'none' || signatureStatus === 'declined' ? (
+          <>
+            <Text style={{ fontSize: 13, color: BNG_COLORS.textSecondary, marginBottom: 12, lineHeight: 19 }}>
+              Save the proposal first, then enter the client's email and send for e-signature via SignNow.
+            </Text>
+            <Text style={styles.label}>Client Email</Text>
+            <TextInput
+              style={styles.input}
+              value={signerEmail}
+              onChangeText={setSignerEmail}
+              placeholder="client@email.com"
+              placeholderTextColor={BNG_COLORS.textMuted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={[styles.esignButton, (!savedProposalId || isSending) && { opacity: 0.6 }]}
+              onPress={handleSendForSignature}
+              disabled={!savedProposalId || isSending}
+              activeOpacity={0.8}
+            >
+              {isSending ? (
+                <ActivityIndicator color="#FFF" style={{ marginRight: 10 }} />
+              ) : (
+                <FontAwesome name="pencil-square-o" size={18} color="#FFF" style={{ marginRight: 10 }} />
+              )}
+              <Text style={styles.esignButtonText}>
+                {isSending ? 'Sending...' : 'Send for Signature'}
+              </Text>
+            </TouchableOpacity>
+            {!savedProposalId && (
+              <Text style={{ fontSize: 12, color: BNG_COLORS.textMuted, marginTop: 8, textAlign: 'center' }}>
+                Save the proposal first to enable e-signature.
+              </Text>
+            )}
+          </>
+        ) : (
+          <>
+            <Text style={{ fontSize: 14, color: BNG_COLORS.textSecondary, marginBottom: 8 }}>
+              Sent to: <Text style={{ fontWeight: '600', color: BNG_COLORS.text }}>{signerEmail}</Text>
+            </Text>
+            <TouchableOpacity
+              style={styles.checkStatusBtn}
+              onPress={handleCheckStatus}
+              disabled={isCheckingStatus}
+              activeOpacity={0.8}
+            >
+              <FontAwesome name="refresh" size={14} color={BNG_COLORS.primary} style={{ marginRight: 8 }} />
+              <Text style={{ fontSize: 14, fontWeight: '600', color: BNG_COLORS.primary }}>
+                {isCheckingStatus ? 'Checking...' : 'Refresh Status'}
+              </Text>
+            </TouchableOpacity>
+            {signatureStatus === 'signed' && (
+              <View style={styles.signedConfirm}>
+                <FontAwesome name="check-circle" size={20} color={BNG_COLORS.success} style={{ marginRight: 10 }} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: BNG_COLORS.success }}>
+                  Contract signed by client
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <Stack.Screen
@@ -600,6 +760,7 @@ ${specialConditions ? `
           <>
             {renderManualForm()}
             {renderActions()}
+            {renderESignSection()}
           </>
         )}
         <View style={{ height: 40 }} />
@@ -701,6 +862,30 @@ const styles = StyleSheet.create({
     ...Platform.select({ ios: { shadowColor: BNG_COLORS.accent, shadowOpacity: 0.3, shadowRadius: 8 }, android: { elevation: 6 } }),
   },
   aiButtonText: { color: '#FFF', fontSize: 17, fontWeight: '700' },
+
+  // E-Signature
+  esignBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12,
+  },
+  esignDot: { width: 7, height: 7, borderRadius: 4, marginRight: 6 },
+  esignBadgeText: { fontSize: 12, fontWeight: '700' },
+  esignButton: {
+    backgroundColor: '#059669', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 16, borderRadius: 14, marginTop: 14,
+    ...Platform.select({ ios: { shadowColor: '#059669', shadowOpacity: 0.3, shadowRadius: 8 }, android: { elevation: 6 } }),
+  },
+  esignButtonText: { color: '#FFF', fontSize: 17, fontWeight: '700' },
+  checkStatusBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, borderRadius: 12,
+    backgroundColor: BNG_COLORS.background, borderWidth: 1, borderColor: BNG_COLORS.border,
+    marginTop: 8,
+  },
+  signedConfirm: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: `${BNG_COLORS.success}10`, borderRadius: 12, padding: 14, marginTop: 12,
+  },
 
   // Actions
   actionsWrap: { marginTop: 8 },

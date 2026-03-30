@@ -13,6 +13,7 @@ import { BNG_COLORS, SHADOWS } from '../../lib/theme';
 import { fetchEvents, fetchProjects, fetchIntegration, syncGoogleCalendar, disconnectIntegration } from '../../lib/data';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
+import { confirmAsync } from '../../lib/confirmDialog';
 import { Database } from '../../types/database';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
@@ -172,25 +173,25 @@ export default function CalendarScreen() {
     }
   };
 
-  // Disconnect Google Calendar
-  const handleDisconnectGcal = () => {
-    Alert.alert('Disconnect', 'Remove Google Calendar connection?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Disconnect',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            if (user?.id) {
-              await supabase.functions.invoke('calendar-disconnect', {
-                body: { user_id: user.id },
-              });
-              setIsGcalConnected(false);
-            }
-          } catch { /* ok */ }
-        },
-      },
-    ]);
+  // Disconnect Google Calendar (confirm uses window.confirm on web — RN Alert buttons are unreliable there)
+  const handleDisconnectGcal = async () => {
+    const ok = await confirmAsync({
+      title: 'Disconnect',
+      message: 'Remove Google Calendar connection?',
+      confirmText: 'Disconnect',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      if (user?.id) {
+        await supabase.functions.invoke('calendar-disconnect', {
+          body: { user_id: user.id },
+        });
+        setIsGcalConnected(false);
+      }
+    } catch {
+      /* ok */
+    }
   };
 
   // Native calendar sync (kept as fallback)

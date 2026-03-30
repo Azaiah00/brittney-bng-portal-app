@@ -11,6 +11,7 @@ import { BNG_COLORS, SHADOWS } from '../lib/theme';
 import { fetchProject, updateProject, deleteProject, fetchLeads, fetchCustomers } from '../lib/data';
 import { DatePickerField } from '../components/DatePickerField';
 import { CurrencyInput } from '../components/CurrencyInput';
+import { confirmAsync } from '../lib/confirmDialog';
 
 type ContactOption = { id: string; name: string; address?: string | null; type: 'lead' | 'customer' };
 
@@ -104,22 +105,21 @@ export default function EditProjectScreen() {
     }
   };
 
-  const handleDelete = () => {
-    Alert.alert('Delete Project?', 'Timeline, checklist, punch list, and estimates for this project will be affected. This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteProject(id!);
-            router.replace('/' as any);
-          } catch {
-            Alert.alert('Error', 'Could not delete project.');
-          }
-        },
-      },
-    ]);
+  const handleDelete = async () => {
+    const ok = await confirmAsync({
+      title: 'Delete Project?',
+      message:
+        'Timeline, checklist, punch list, and estimates for this project will be affected. This cannot be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteProject(id!);
+      router.replace('/' as any);
+    } catch {
+      Alert.alert('Error', 'Could not delete project.');
+    }
   };
 
   if (loading) {

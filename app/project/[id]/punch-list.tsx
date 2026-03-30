@@ -16,6 +16,7 @@ import {
   fetchPunchItems, createPunchItem, updatePunchItem,
   deletePunchItem, fetchProject, fetchSubcontractors,
 } from '../../../lib/data';
+import { confirmAsync } from '../../../lib/confirmDialog';
 import { Database } from '../../../types/database';
 
 type PunchItemRow = Database['public']['Tables']['punch_items']['Row'];
@@ -137,19 +138,20 @@ export default function PunchListScreen() {
   };
 
   // Delete a punch item
-  const handleDelete = (item: PunchItemRow) => {
-    Alert.alert('Delete Item?', `Remove "${item.description}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          try {
-            await deletePunchItem(item.id);
-            loadData();
-          } catch { Alert.alert('Error', 'Could not delete.'); }
-        },
-      },
-    ]);
+  const handleDelete = async (item: PunchItemRow) => {
+    const ok = await confirmAsync({
+      title: 'Delete Item?',
+      message: `Remove "${item.description}"?`,
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deletePunchItem(item.id);
+      loadData();
+    } catch {
+      Alert.alert('Error', 'Could not delete.');
+    }
   };
 
   if (loading) {

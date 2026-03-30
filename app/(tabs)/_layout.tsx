@@ -8,6 +8,8 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
 import { useBreakpoint } from '../../lib/hooks';
 import { fetchLeads, fetchCustomers, fetchProjects } from '../../lib/data';
+import { useAuth } from '../../lib/auth';
+import { getUserDisplayName, getUserInitials } from '../../lib/userDisplay';
 
 const NAV_ITEMS = [
   { route: '/', label: 'Dashboard', icon: 'th-large' },
@@ -21,6 +23,11 @@ const NAV_ITEMS = [
 type SearchResult = { id: string; title: string; type: 'lead' | 'customer' | 'project'; route: string };
 
 function TopNavBar() {
+  const { user } = useAuth();
+  const displayName = getUserDisplayName(user);
+  const initials = getUserInitials(user);
+  const profileEmail = user?.email ?? '';
+
   const pathname = usePathname();
   const router = useRouter();
   const bp = useBreakpoint();
@@ -141,12 +148,12 @@ function TopNavBar() {
               activeOpacity={0.8}
             >
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>BR</Text>
+                <Text style={styles.avatarText}>{initials}</Text>
               </View>
               {isDesktop && (
                 <View style={styles.profileInfo}>
-                  <Text style={styles.profileName}>Brittney Reader</Text>
-                  <Text style={styles.profileEmail}>bngremodel@gmail.com</Text>
+                  <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
+                  <Text style={styles.profileEmail} numberOfLines={1}>{profileEmail || ' '}</Text>
                 </View>
               )}
             </TouchableOpacity>

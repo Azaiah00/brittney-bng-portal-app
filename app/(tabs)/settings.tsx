@@ -4,10 +4,13 @@ import {
   ScrollView, Platform, Switch, Alert, Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
 import { fetchDashboardStats, DashboardStats, fetchIntegration } from '../../lib/data';
 import { useAuth } from '../../lib/auth';
+import { getUserDisplayName, getUserInitials } from '../../lib/userDisplay';
+import { confirmAsync } from '../../lib/confirmDialog';
 
 const PROFILE_SECTIONS = [
   {
@@ -45,7 +48,10 @@ const PROFILE_SECTIONS = [
 ];
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const { user, signOut } = useAuth();
+  const displayName = getUserDisplayName(user);
+  const initials = getUserInitials(user);
   const [toggles, setToggles] = React.useState({ notifications: true, theme: false });
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [gcalConnected, setGcalConnected] = useState(false);
@@ -106,7 +112,7 @@ export default function SettingsScreen() {
       case 'about':
         Alert.alert(
           'About BNG Remodel',
-          'BNG Remodel App v1.0.0\n\nBuilt for Brittney Reader\nBNG Remodel, Richmond VA\n\nPowered by Supabase & Gemini AI'
+          'BNG Remodel App v1.0.0\n\nBNG Remodel, Richmond VA\n\nPowered by Supabase & Gemini AI'
         );
         break;
       default:
@@ -114,17 +120,20 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert('Log Out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log Out',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-        },
-      },
-    ]);
+  const handleLogout = async () => {
+    const ok = await confirmAsync({
+      title: 'Log Out',
+      message: 'Are you sure you want to log out?',
+      confirmText: 'Log Out',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await signOut();
+    } catch (e) {
+      console.error(e);
+    }
+    router.replace('/login');
   };
 
   const renderSettingItem = (item: any, isLast: boolean) => (
@@ -180,14 +189,10 @@ export default function SettingsScreen() {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarLarge}>
-            <Text style={styles.avatarText}>
-              {user?.user_metadata?.full_name
-                ? user.user_metadata.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
-                : 'BR'}
-            </Text>
+            <Text style={styles.avatarText}>{initials}</Text>
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{user?.user_metadata?.full_name || 'Brittney Reader'}</Text>
+            <Text style={styles.profileName}>{displayName}</Text>
             <Text style={styles.profileRole}>Owner &bull; BNG Remodel</Text>
             <View style={styles.profileBadge}>
               <Text style={styles.profileBadgeText}>Pro Plan</Text>

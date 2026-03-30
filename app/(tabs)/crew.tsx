@@ -9,6 +9,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
 import { useBreakpoint } from '../../lib/hooks';
 import { fetchSubcontractors, deleteSubcontractor } from '../../lib/data';
+import { confirmAsync } from '../../lib/confirmDialog';
 import { Database } from '../../types/database';
 
 type SubRow = Database['public']['Tables']['subcontractors']['Row'];
@@ -86,23 +87,20 @@ export default function CrewScreen() {
     Linking.openURL(`mailto:${email}`);
   };
 
-  const handleDelete = (sub: SubRow) => {
-    Alert.alert(
-      'Remove Sub?',
-      `Remove ${sub.name} from your crew roster?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove', style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteSubcontractor(sub.id);
-              loadData();
-            } catch { Alert.alert('Error', 'Could not remove sub.'); }
-          },
-        },
-      ],
-    );
+  const handleDelete = async (sub: SubRow) => {
+    const ok = await confirmAsync({
+      title: 'Remove Sub?',
+      message: `Remove ${sub.name} from your crew roster?`,
+      confirmText: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteSubcontractor(sub.id);
+      loadData();
+    } catch {
+      Alert.alert('Error', 'Could not remove sub.');
+    }
   };
 
   const renderSubCard = ({ item }: { item: SubRow }) => {

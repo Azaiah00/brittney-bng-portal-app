@@ -20,6 +20,8 @@ import { generateContractProposal, ContractLineItem } from '../../../lib/gemini'
 import { BNG_CONTRACT_HTML } from '../../../lib/contract-template';
 import { DatePickerField } from '../../../components/DatePickerField';
 import { CurrencyInput } from '../../../components/CurrencyInput';
+import { useAuth } from '../../../lib/auth';
+import { getUserDisplayName } from '../../../lib/userDisplay';
 
 // ── Line item type used in local state ──
 interface LineItem {
@@ -34,6 +36,8 @@ const newId = () => Math.random().toString(36).slice(2, 9);
 
 export default function ProposalScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
+  const contractorSignerName = getUserDisplayName(user);
 
   // ── Mode: manual (default) or ai ──
   const [mode, setMode] = useState<'manual' | 'ai'>('manual');
@@ -365,7 +369,7 @@ ${specialConditions ? `
 <div class="sig-section">
   <div class="sig-box">
     <div class="sig-line"></div>
-    <div class="sig-label">Brittney Reader, BNG Remodel — Date</div>
+    <div class="sig-label">${contractorSignerName}, BNG Remodel — Date</div>
   </div>
   <div class="sig-box">
     <div class="sig-line"></div>

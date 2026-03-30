@@ -9,6 +9,8 @@ import * as ImagePicker from 'expo-image-picker';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
 import { fetchProject, fetchLogs, createLog, fetchLeads, fetchCustomers } from '../../../lib/data';
+import { useAuth } from '../../../lib/auth';
+import { getUserDisplayName } from '../../../lib/userDisplay';
 import { Database } from '../../../types/database';
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
@@ -16,6 +18,8 @@ type LogRow = Database['public']['Tables']['logs']['Row'];
 
 export default function ProjectTimelineScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
+  const myAuthorName = getUserDisplayName(user);
   const router = useRouter();
   const [project, setProject] = useState<ProjectRow | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
@@ -75,7 +79,8 @@ export default function ProjectTimelineScreen() {
         project_id: id,
         note: newNote.trim(),
         image_urls: selectedImages.length > 0 ? selectedImages : null,
-        author: 'Brittney',
+        // Tag each note with whoever is signed in (from Supabase Auth / Google profile).
+        author: myAuthorName,
       });
       setLogs(prev => [newLog, ...prev]);
       setNewNote('');
@@ -89,7 +94,10 @@ export default function ProjectTimelineScreen() {
 
   const filteredLogs = logFilter === 'all'
     ? logs
-    : logs.filter(l => (l.author || '').toLowerCase().includes('brittney'));
+    : logs.filter(
+        (l) =>
+          (l.author || '').trim().toLowerCase() === myAuthorName.trim().toLowerCase()
+      );
 
   const formatBudget = (b: number | null) => {
     if (!b) return 'TBD';

@@ -10,6 +10,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS } from '../lib/theme';
 import { fetchLead, updateLead, deleteLead } from '../lib/data';
 import { LeadSourcePicker } from '../components/LeadSourcePicker';
+import { confirmAsync } from '../lib/confirmDialog';
 
 function buildAddress(parts: {
   addressLine1: string;
@@ -119,22 +120,20 @@ export default function EditLeadScreen() {
     }
   };
 
-  const handleDelete = () => {
-    Alert.alert('Delete Lead?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteLead(id!);
-            router.replace('/leads' as any);
-          } catch {
-            Alert.alert('Error', 'Could not delete lead.');
-          }
-        },
-      },
-    ]);
+  const handleDelete = async () => {
+    const ok = await confirmAsync({
+      title: 'Delete Lead?',
+      message: 'This cannot be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteLead(id!);
+      router.replace('/leads' as any);
+    } catch {
+      Alert.alert('Error', 'Could not delete lead.');
+    }
   };
 
   if (loading) {

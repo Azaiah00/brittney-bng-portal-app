@@ -110,10 +110,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-  };
+  const signOut = useCallback(async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) console.warn('signOut:', error.message);
+    } finally {
+      setSession(null);
+      // If OAuth hash/query is still on the URL, the auth gate treats it as a return-from-Google
+      // and skips redirect to login while session is null — user appears "stuck" after logout.
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const u = new URL(window.location.href);
+        u.hash = '';
+        ['code', 'state', 'error', 'error_description'].forEach((k) => u.searchParams.delete(k));
+        const next = u.pathname + (u.search ? u.search : '');
+        window.history.replaceState(null, '', next);
+      }
+    }
+  }, []);
 
   return (
     <AuthContext.Provider

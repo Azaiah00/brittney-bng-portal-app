@@ -20,6 +20,7 @@ import {
   fetchSubcontractors,
   fetchProjects,
 } from '../../lib/data';
+import { confirmAsync } from '../../lib/confirmDialog';
 import { Database } from '../../types/database';
 
 type LeadRow = Database['public']['Tables']['leads']['Row'];
@@ -123,42 +124,38 @@ export default function LeadsScreen() {
     }
   };
 
-  const handleDeleteLead = (leadId: string) => {
-    Alert.alert('Delete Lead?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteLead(leadId);
-            await loadData();
-            setSelectedLeadId(null);
-          } catch {
-            Alert.alert('Error', 'Could not delete lead.');
-          }
-        },
-      },
-    ]);
+  const handleDeleteLead = async (leadId: string) => {
+    const ok = await confirmAsync({
+      title: 'Delete Lead?',
+      message: 'This cannot be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteLead(leadId);
+      await loadData();
+      setSelectedLeadId(null);
+    } catch {
+      Alert.alert('Error', 'Could not delete lead.');
+    }
   };
 
-  const handleDeleteCustomer = (customerId: string) => {
-    Alert.alert('Delete Customer?', 'This cannot be undone. Linked projects will keep the link but the customer record will be removed.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteCustomer(customerId);
-            await loadData();
-            setSelectedCustomerId(null);
-          } catch {
-            Alert.alert('Error', 'Could not delete customer.');
-          }
-        },
-      },
-    ]);
+  const handleDeleteCustomer = async (customerId: string) => {
+    const ok = await confirmAsync({
+      title: 'Delete Customer?',
+      message: 'This cannot be undone. Linked projects will keep the link but the customer record will be removed.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteCustomer(customerId);
+      await loadData();
+      setSelectedCustomerId(null);
+    } catch {
+      Alert.alert('Error', 'Could not delete customer.');
+    }
   };
 
   const renderLeadItem = ({ item }: { item: LeadRow }) => {

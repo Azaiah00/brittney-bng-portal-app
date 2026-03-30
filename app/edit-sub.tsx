@@ -9,6 +9,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../lib/theme';
 import { fetchSubcontractor, updateSubcontractor, deleteSubcontractor } from '../lib/data';
+import { confirmAsync } from '../lib/confirmDialog';
 
 const TRADE_OPTIONS = [
   { key: 'electrician', label: 'Electrical' },
@@ -83,22 +84,20 @@ export default function EditSubScreen() {
     }
   };
 
-  const handleDelete = () => {
-    Alert.alert('Remove Sub?', 'This will remove them from your crew roster. This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteSubcontractor(id!);
-            router.replace('/crew' as any);
-          } catch {
-            Alert.alert('Error', 'Could not remove sub.');
-          }
-        },
-      },
-    ]);
+  const handleDelete = async () => {
+    const ok = await confirmAsync({
+      title: 'Remove Sub?',
+      message: 'This will remove them from your crew roster. This cannot be undone.',
+      confirmText: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteSubcontractor(id!);
+      router.replace('/crew' as any);
+    } catch {
+      Alert.alert('Error', 'Could not remove sub.');
+    }
   };
 
   if (loading) {

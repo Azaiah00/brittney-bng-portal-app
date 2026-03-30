@@ -12,6 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../../lib/theme';
 import { fetchChecklist, createChecklist, updateChecklist, fetchProject, updateProject } from '../../../lib/data';
+import { confirmAsync } from '../../../lib/confirmDialog';
 import { Database } from '../../../types/database';
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
@@ -143,18 +144,15 @@ export default function ChecklistScreen() {
     saveItems(updated);
   };
 
-  const handleReset = () => {
-    Alert.alert(
-      'Reset Checklist?',
-      'This will clear all progress and start fresh.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset', style: 'destructive',
-          onPress: () => saveItems(copyDefaultItems()),
-        },
-      ],
-    );
+  const handleReset = async () => {
+    const ok = await confirmAsync({
+      title: 'Reset Checklist?',
+      message: 'This will clear all progress and start fresh.',
+      confirmText: 'Reset',
+      destructive: true,
+    });
+    if (!ok) return;
+    saveItems(copyDefaultItems());
   };
 
   // Progress stats

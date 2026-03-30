@@ -1,0 +1,2 @@
+# Copied into dist/ on `expo export -p web` — backup SPA rule for Netlify.
+/*    /index.html   200

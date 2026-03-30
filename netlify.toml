@@ -1,0 +1,7 @@
+# Netlify — SPA fallback so client-side routes (and OAuth return URLs) work.
+# Without this, paths like /login or /auth/callback 404 because only index.html exists at the root.
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

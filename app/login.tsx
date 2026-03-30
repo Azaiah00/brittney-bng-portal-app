@@ -3,10 +3,9 @@
 
 import React, { useState } from 'react';
 import {
-  StyleSheet, View, Text, TouchableOpacity,
+  StyleSheet, View, Text, TouchableOpacity, Image,
   ActivityIndicator, Alert, Platform, SafeAreaView,
 } from 'react-native';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../lib/theme';
 import { useAuth } from '../lib/auth';
 
@@ -30,8 +29,14 @@ export default function LoginScreen() {
       <View style={styles.content}>
         {/* Logo / brand */}
         <View style={styles.logoSection}>
+          {/* Brand mark: full BNG Remodel logo (assets/images/logo-bng.png). */}
           <View style={styles.logoIcon}>
-            <FontAwesome name="home" size={40} color="#FFF" />
+            <Image
+              source={require('../assets/images/logo-bng.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+              accessibilityLabel="BNG Remodel logo"
+            />
           </View>
           <Text style={styles.logoText}>BNG <Text style={styles.logoAccent}>Remodel</Text></Text>
           <Text style={styles.tagline}>Your remodeling business hub</Text>
@@ -93,14 +98,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 48,
   },
+  // Wide wordmark: taller box than the old square home icon so nothing feels cropped.
   logoIcon: {
-    width: 80,
-    height: 80,
+    width: '100%',
+    maxWidth: 280,
+    height: 104,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    overflow: 'hidden',
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
   logoText: {
     fontSize: 36,

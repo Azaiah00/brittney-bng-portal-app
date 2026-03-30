@@ -1,7 +1,7 @@
 // Auth context — wraps Supabase Auth for the whole app.
 // Provides session, user, signIn (Google OAuth), signOut, and loading state.
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { Session, User } from '@supabase/supabase-js';
 import { makeRedirectUri } from 'expo-auth-session';
@@ -31,34 +31,46 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
+// Web: redirect must match Supabase "Redirect URLs" exactly (many projects list no trailing slash).
+function getOAuthRedirectTo(): string {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return makeRedirectUri({
+    scheme: 'brittanybngremodelapp',
+    path: 'auth/callback',
+  });
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Listen for auth state changes (login, logout, token refresh)
+  // IMPORTANT: Do not call getSession().then(setLoading false) before URL/PKCE recovery finishes on web.
+  // That races the auth gate and sends users to /login with session still null.
+  // INITIAL_SESSION fires after Supabase finishes detectSessionInUrl + storage hydrate.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
-      setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, s) => {
-        setSession(s);
+      // Only INITIAL_SESSION runs after initializePromise (incl. OAuth URL / PKCE recovery).
+      // Do not use getSession().then(setLoading false) — that races and drops users on /login.
+      if (event === 'INITIAL_SESSION') {
         setLoading(false);
       }
-    );
+    });
 
-    return () => subscription.unsubscribe();
+    // Never spin forever if INITIAL_SESSION never fires (edge case)
+    const failSafe = setTimeout(() => setLoading(false), 12000);
+
+    return () => {
+      clearTimeout(failSafe);
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // Google OAuth via Supabase — opens browser for consent
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = useCallback(async () => {
     try {
-      const redirectTo = makeRedirectUri({
-        scheme: 'brittanybngremodelapp',
-        path: 'auth/callback',
-      });
+      const redirectTo = getOAuthRedirectTo();
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -71,17 +83,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
       if (!data.url) throw new Error('No auth URL returned');
 
-      // Open the Supabase auth URL in the system browser
       if (Platform.OS === 'web') {
         window.location.href = data.url;
       } else {
-        const result = await WebBrowser.openAuthSessionAsync(
-          data.url,
-          redirectTo
-        );
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
 
         if (result.type === 'success' && result.url) {
-          // Extract tokens from the redirect URL hash fragment
           const url = new URL(result.url);
           const params = new URLSearchParams(
             url.hash ? url.hash.substring(1) : url.search.substring(1)
@@ -101,7 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Google sign-in error:', err);
       throw err;
     }
-  };
+  }, []);
 
   const signOut = async () => {
     await supabase.auth.signOut();

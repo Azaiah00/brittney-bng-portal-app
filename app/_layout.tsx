@@ -3,6 +3,7 @@ import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
@@ -54,8 +55,18 @@ function useProtectedRoute() {
   useEffect(() => {
     if (loading) return;
 
+    // Web OAuth return: URL still has tokens/code before Supabase finishes detectSessionInUrl.
+    // Don't send user to login during that brief window.
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && !session) {
+      const hash = window.location.hash;
+      const search = window.location.search;
+      const looksLikeOAuthReturn =
+        (hash && (hash.includes('access_token') || hash.includes('refresh_token'))) ||
+        search.includes('code=');
+      if (looksLikeOAuthReturn) return;
+    }
+
     const inLogin = segments[0] === 'login';
-    const inSetupWizard = segments[0] === 'setup-wizard';
 
     if (!session && !inLogin) {
       router.replace('/login');

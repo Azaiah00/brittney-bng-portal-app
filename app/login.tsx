@@ -72,7 +72,7 @@ export default function LoginScreen() {
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            BNG Remodel — Richmond, VA
+            BNG Remodel — Nashville, Tennessee
           </Text>
           <Text style={styles.footerVersion}>v1.0.0</Text>
         </View>

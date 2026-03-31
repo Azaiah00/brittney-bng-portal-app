@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
+import { getGoogleCalendarRedirectUri } from '../lib/googleCalendarOAuth';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS } from '../lib/theme';
 import { useAuth } from '../lib/auth';
@@ -33,7 +33,7 @@ export default function SetupWizardScreen() {
     if (!user?.id) return;
     setIsConnecting(true);
     try {
-      const redirectUri = makeRedirectUri({ scheme: 'brittanybngremodelapp', path: 'calendar/callback' });
+      const redirectUri = getGoogleCalendarRedirectUri();
       const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
       const scope = 'https://www.googleapis.com/auth/calendar.events';
 

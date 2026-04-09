@@ -1,6 +1,5 @@
 /**
- * Native implementation for calendar module.
- * Uses react-native-calendar-events for iOS/Android Apple Calendar sync.
+ * Native: device calendar (Apple Calendar on iOS, default calendar on Android) via react-native-calendar-events.
  */
 
 import RNCalendarEvents from 'react-native-calendar-events';
@@ -15,7 +14,8 @@ export async function requestCalendarPermissions() {
   }
 }
 
-export async function createProjectCalendarEvent(
+/** Create an event on the device calendar. Returns native event id, or null on failure. */
+export async function createDeviceCalendarEvent(
   title: string,
   startDate: string,
   endDate: string,
@@ -28,8 +28,8 @@ export async function createProjectCalendarEvent(
     const eventId = await RNCalendarEvents.saveEvent(title, {
       startDate: new Date(startDate).toISOString(),
       endDate: new Date(endDate).toISOString(),
-      notes: notes,
-      alarms: [{ date: -60 }], // 1 hour before
+      notes,
+      alarms: [{ date: -60 }],
     });
 
     return eventId;
@@ -39,7 +39,10 @@ export async function createProjectCalendarEvent(
   }
 }
 
-export async function updateProjectCalendarEvent(
+/** @deprecated Use createDeviceCalendarEvent */
+export const createProjectCalendarEvent = createDeviceCalendarEvent;
+
+export async function updateDeviceCalendarEvent(
   eventId: string,
   title: string,
   startDate: string,
@@ -54,12 +57,27 @@ export async function updateProjectCalendarEvent(
       id: eventId,
       startDate: new Date(startDate).toISOString(),
       endDate: new Date(endDate).toISOString(),
-      notes: notes,
+      notes,
     });
 
     return updatedEventId;
   } catch (error) {
     console.error('Error updating calendar event:', error);
     return null;
+  }
+}
+
+/** @deprecated Use updateDeviceCalendarEvent */
+export const updateProjectCalendarEvent = updateDeviceCalendarEvent;
+
+export async function removeDeviceCalendarEvent(eventId: string): Promise<boolean> {
+  try {
+    const ok = await requestCalendarPermissions();
+    if (!ok) return false;
+    await RNCalendarEvents.removeEvent(eventId);
+    return true;
+  } catch (error) {
+    console.error('Error removing calendar event:', error);
+    return false;
   }
 }

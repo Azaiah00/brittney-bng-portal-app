@@ -1,13 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   StyleSheet, View, Text, FlatList, TouchableOpacity,
-  SafeAreaView, Platform, Linking, Alert,
+  SafeAreaView, Platform, Linking, Alert, ScrollView, Image, ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
-import { useIsTablet, useBreakpoint } from '../../lib/hooks';
+import { useIsTablet, useBreakpoint, useResponsivePadding } from '../../lib/hooks';
 import {
   fetchLeads,
   fetchCustomers,
@@ -19,12 +19,18 @@ import {
   deleteCustomer,
   fetchSubcontractors,
   fetchProjects,
+  fetchContactNotes,
+  fetchContactMedia,
+  type ContactRef,
 } from '../../lib/data';
+import { supabase } from '../../lib/supabase';
 import { confirmAsync } from '../../lib/confirmDialog';
 import { Database } from '../../types/database';
 
 type LeadRow = Database['public']['Tables']['leads']['Row'];
 type CustomerRow = Database['public']['Tables']['customers']['Row'];
+type ContactNoteRow = Database['public']['Tables']['contact_notes']['Row'];
+type ContactMediaRow = Database['public']['Tables']['contact_media']['Row'];
 type SubRow = Database['public']['Tables']['subcontractors']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
@@ -39,6 +45,8 @@ export default function LeadsScreen() {
   const isTablet = useIsTablet();
   const bp = useBreakpoint();
   const isMobile = bp === 'mobile';
+  const isDesktop = bp === 'desktop';
+  const horizontalPad = useResponsivePadding();
   const router = useRouter();
   const { tab: tabFromUrl } = useLocalSearchParams<{ tab?: string }>();
   const [viewMode, setViewMode] = useState<'leads' | 'customers' | 'subs'>('leads');
@@ -49,6 +57,11 @@ export default function LeadsScreen() {
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  // Inline CRM preview on the contact detail pane (notes + media thumbnails).
+  const [previewNotes, setPreviewNotes] = useState<ContactNoteRow[]>([]);
+  const [previewMedia, setPreviewMedia] = useState<ContactMediaRow[]>([]);
+  const [previewMediaUrls, setPreviewMediaUrls] = useState<Record<string, string>>({});
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -69,7 +82,52 @@ export default function LeadsScreen() {
     } catch { /* Supabase may not be ready */ }
   }, []);
 
-  // Dashboard "New leads" card passes ?tab=leads
+  const selectedLead = leads.find((l) => l.id === selectedLeadId);
+  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
+  const getSourceName = (id: string | null) => (id ? sourceMap[id] || '—' : '—');
+
+  // Load Apple-style notes and media for whoever is selected (detail pane).
+  const loadContactCrmPreview = useCallback(async (ref: ContactRef) => {
+    setPreviewLoading(true);
+    try {
+      const [notes, media] = await Promise.all([
+        fetchContactNotes(ref),
+        fetchContactMedia(ref),
+      ]);
+      setPreviewNotes(notes.slice(0, 6));
+      const mediaSlice = media.slice(0, 12);
+      setPreviewMedia(mediaSlice);
+      const urls: Record<string, string> = {};
+      for (const m of mediaSlice) {
+        const { data } = await supabase.storage
+          .from('contact-media')
+          .createSignedUrl(m.storage_path, 3600);
+        if (data?.signedUrl) urls[m.id] = data.signedUrl;
+      }
+      setPreviewMediaUrls(urls);
+    } catch {
+      setPreviewNotes([]);
+      setPreviewMedia([]);
+      setPreviewMediaUrls({});
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedLeadId && viewMode === 'leads') {
+      loadContactCrmPreview({ kind: 'lead', id: selectedLeadId });
+    } else if (selectedCustomerId && viewMode === 'customers') {
+      loadContactCrmPreview({ kind: 'customer', id: selectedCustomerId });
+    } else {
+      setPreviewNotes([]);
+      setPreviewMedia([]);
+      setPreviewMediaUrls({});
+      setPreviewLoading(false);
+    }
+  }, [selectedLeadId, selectedCustomerId, viewMode, loadContactCrmPreview]);
+
+  // Dashboard "New leads" card passes ?tab=leads. Also refresh notes/media when returning from modals.
   useFocusEffect(
     useCallback(() => {
       loadData();
@@ -78,13 +136,22 @@ export default function LeadsScreen() {
         setViewMode(t);
         setSelectedLeadId(null);
         setSelectedCustomerId(null);
+        return;
       }
-    }, [loadData, tabFromUrl]),
+      if (selectedLeadId && viewMode === 'leads') {
+        loadContactCrmPreview({ kind: 'lead', id: selectedLeadId });
+      } else if (selectedCustomerId && viewMode === 'customers') {
+        loadContactCrmPreview({ kind: 'customer', id: selectedCustomerId });
+      }
+    }, [
+      loadData,
+      tabFromUrl,
+      selectedLeadId,
+      selectedCustomerId,
+      viewMode,
+      loadContactCrmPreview,
+    ]),
   );
-
-  const selectedLead = leads.find((l) => l.id === selectedLeadId);
-  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
-  const getSourceName = (id: string | null) => (id ? sourceMap[id] || '—' : '—');
 
   // ── Contact actions via deep links ──
   const handleCall = (phone: string | null) => {
@@ -251,28 +318,63 @@ export default function LeadsScreen() {
 
   const renderList = () => (
     <View style={[styles.listContainer, isTablet && styles.listContainerTablet]}>
-      <View style={styles.listHeader}>
-        <Text style={styles.listTitle}>Contacts</Text>
-        <View style={styles.filterContainer}>
-          <TouchableOpacity
-            style={[styles.filterButton, viewMode === 'leads' && styles.filterButtonActive]}
-            onPress={() => setViewMode('leads')}
+      <View style={[styles.listHeader, isMobile && styles.listHeaderMobile]}>
+        <Text style={[styles.listTitle, isMobile && styles.listTitleMobile]}>Contacts</Text>
+        {isMobile ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator
+            bounces={false}
+            style={styles.filterScrollMobile}
+            contentContainerStyle={[
+              styles.filterScrollContentMobile,
+              { paddingRight: horizontalPad },
+            ]}
+            keyboardShouldPersistTaps="handled"
           >
-            <Text style={[styles.filterText, viewMode === 'leads' && styles.filterTextActive]}>Leads</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, viewMode === 'customers' && styles.filterButtonActive]}
-            onPress={() => setViewMode('customers')}
-          >
-            <Text style={[styles.filterText, viewMode === 'customers' && styles.filterTextActive]}>Customers</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, viewMode === 'subs' && styles.filterButtonActive]}
-            onPress={() => setViewMode('subs')}
-          >
-            <Text style={[styles.filterText, viewMode === 'subs' && styles.filterTextActive]}>Subs</Text>
-          </TouchableOpacity>
-        </View>
+            <View style={[styles.filterContainer, styles.filterContainerScrollable]}>
+              <TouchableOpacity
+                style={[styles.filterButton, styles.filterButtonMobileScroll, viewMode === 'leads' && styles.filterButtonActive]}
+                onPress={() => setViewMode('leads')}
+              >
+                <Text style={[styles.filterText, viewMode === 'leads' && styles.filterTextActive]}>Leads</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterButton, styles.filterButtonMobileScroll, viewMode === 'customers' && styles.filterButtonActive]}
+                onPress={() => setViewMode('customers')}
+              >
+                <Text style={[styles.filterText, viewMode === 'customers' && styles.filterTextActive]}>Customers</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterButton, styles.filterButtonMobileScroll, viewMode === 'subs' && styles.filterButtonActive]}
+                onPress={() => setViewMode('subs')}
+              >
+                <Text style={[styles.filterText, viewMode === 'subs' && styles.filterTextActive]}>Subs</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        ) : (
+          <View style={styles.filterContainer}>
+            <TouchableOpacity
+              style={[styles.filterButton, viewMode === 'leads' && styles.filterButtonActive]}
+              onPress={() => setViewMode('leads')}
+            >
+              <Text style={[styles.filterText, viewMode === 'leads' && styles.filterTextActive]}>Leads</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterButton, viewMode === 'customers' && styles.filterButtonActive]}
+              onPress={() => setViewMode('customers')}
+            >
+              <Text style={[styles.filterText, viewMode === 'customers' && styles.filterTextActive]}>Customers</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterButton, viewMode === 'subs' && styles.filterButtonActive]}
+              onPress={() => setViewMode('subs')}
+            >
+              <Text style={[styles.filterText, viewMode === 'subs' && styles.filterTextActive]}>Subs</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Optional: Parse with AI (Scratchpad) — when in Leads view */}
@@ -292,7 +394,7 @@ export default function LeadsScreen() {
           data={leads}
           keyExtractor={(item) => item.id}
           renderItem={renderLeadItem}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingHorizontal: horizontalPad }]}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={{ padding: 40, alignItems: 'center' }}>
@@ -309,7 +411,7 @@ export default function LeadsScreen() {
           data={customers}
           keyExtractor={(item) => item.id}
           renderItem={renderCustomerItem}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingHorizontal: horizontalPad }]}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={{ padding: 40, alignItems: 'center' }}>
@@ -325,7 +427,7 @@ export default function LeadsScreen() {
         <FlatList
           data={subs}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingHorizontal: horizontalPad }]}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -423,7 +525,7 @@ export default function LeadsScreen() {
             <View style={styles.contactIconContainer}>
               <FontAwesome name="building" size={16} color={BNG_COLORS.primary} />
             </View>
-            <View>
+            <View style={styles.contactValueCol}>
               <Text style={styles.contactLabel}>Company</Text>
               <Text style={styles.contactValue}>{opts.companyName}</Text>
             </View>
@@ -435,7 +537,7 @@ export default function LeadsScreen() {
         <View style={styles.contactIconContainer}>
           <FontAwesome name="phone" size={16} color={BNG_COLORS.primary} />
         </View>
-        <View>
+        <View style={styles.contactValueCol}>
           <Text style={styles.contactLabel}>Phone</Text>
           <Text style={styles.contactValue}>{phone || 'Not provided'}</Text>
         </View>
@@ -445,7 +547,7 @@ export default function LeadsScreen() {
         <View style={styles.contactIconContainer}>
           <FontAwesome name="envelope-o" size={16} color={BNG_COLORS.primary} />
         </View>
-        <View>
+        <View style={styles.contactValueCol}>
           <Text style={styles.contactLabel}>Email</Text>
           <Text style={styles.contactValue}>{email || 'Not provided'}</Text>
         </View>
@@ -457,7 +559,7 @@ export default function LeadsScreen() {
             <View style={styles.contactIconContainer}>
               <FontAwesome name="envelope" size={16} color={BNG_COLORS.primary} />
             </View>
-            <View>
+            <View style={styles.contactValueCol}>
               <Text style={styles.contactLabel}>Alternate Email</Text>
               <Text style={styles.contactValue}>{opts.alternateEmail}</Text>
             </View>
@@ -471,7 +573,7 @@ export default function LeadsScreen() {
             <View style={styles.contactIconContainer}>
               <FontAwesome name="map-marker" size={16} color={BNG_COLORS.primary} />
             </View>
-            <View>
+            <View style={styles.contactValueCol}>
               <Text style={styles.contactLabel}>Address</Text>
               <Text style={styles.contactValue}>{address}</Text>
             </View>
@@ -481,10 +583,92 @@ export default function LeadsScreen() {
     </View>
   );
 
+  // Notes + photos shown inline on the contact detail pane (same data as contact hub).
+  const renderCrmNotesMediaBlock = (kind: 'lead' | 'customer', contactId: string) => (
+    <View style={styles.crmInlineCard}>
+      <View style={styles.crmInlineHeader}>
+        <Text style={styles.crmInlineTitle}>Notes</Text>
+        <TouchableOpacity
+          onPress={() =>
+            router.push({
+              pathname: '/contact-note-editor',
+              params: { type: kind, id: contactId },
+            } as any)
+          }
+        >
+          <Text style={styles.crmInlineLink}>+ New</Text>
+        </TouchableOpacity>
+      </View>
+      {previewLoading ? (
+        <ActivityIndicator size="small" color={BNG_COLORS.primary} style={{ marginVertical: 8 }} />
+      ) : previewNotes.length === 0 ? (
+        <Text style={styles.crmInlineMuted}>No notes yet. Tap New or open the full hub below.</Text>
+      ) : (
+        previewNotes.map((n) => (
+          <TouchableOpacity
+            key={n.id}
+            style={styles.notePreviewRow}
+            onPress={() =>
+              router.push({
+                pathname: '/contact-note-editor',
+                params: { type: kind, id: contactId, noteId: n.id },
+              } as any)
+            }
+          >
+            <Text style={styles.notePreviewTitle} numberOfLines={1}>
+              {n.title?.trim() || 'Note'}
+            </Text>
+            <Text style={styles.notePreviewBody} numberOfLines={2}>
+              {n.body?.trim() || ' '}
+            </Text>
+            <Text style={styles.notePreviewDate}>
+              {new Date(n.updated_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+            </Text>
+          </TouchableOpacity>
+        ))
+      )}
+
+      <View style={[styles.crmInlineHeader, { marginTop: 18 }]}>
+        <Text style={styles.crmInlineTitle}>Photos</Text>
+        <TouchableOpacity onPress={() => router.push(`/contact/${kind}/${contactId}` as any)}>
+          <Text style={styles.crmInlineLink}>Manage</Text>
+        </TouchableOpacity>
+      </View>
+      {previewLoading ? null : previewMedia.length === 0 ? (
+        <Text style={styles.crmInlineMuted}>No photos yet. Add from the contact hub.</Text>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaStrip}>
+          {previewMedia.map((m) => (
+            <TouchableOpacity
+              key={m.id}
+              onPress={() => router.push(`/contact/${kind}/${contactId}` as any)}
+              style={styles.mediaThumbWrap}
+            >
+              {previewMediaUrls[m.id] ? (
+                <Image source={{ uri: previewMediaUrls[m.id] }} style={styles.mediaThumb} />
+              ) : (
+                <View style={[styles.mediaThumb, styles.mediaThumbPlaceholder]} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+
   const renderDetails = () => (
     <View style={styles.detailsContainer}>
       {showLeadDetail ? (
-        <View style={styles.detailsContent}>
+        <ScrollView
+          style={styles.detailsScroll}
+          contentContainerStyle={[
+            styles.detailsScrollContent,
+            { paddingHorizontal: horizontalPad },
+            isDesktop && styles.detailsScrollContentDesktop,
+          ]}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+        >
           <View style={styles.detailsHeader}>
             <TouchableOpacity style={styles.backButton} onPress={() => setSelectedLeadId(null)}>
               <FontAwesome name="arrow-left" size={18} color={BNG_COLORS.text} />
@@ -524,6 +708,16 @@ export default function LeadsScreen() {
             formatAddress(selectedLead!),
             { alternateEmail: (selectedLead! as any).alternate_email, companyName: (selectedLead! as any).company_name }
           )}
+
+          {renderCrmNotesMediaBlock('lead', selectedLead!.id)}
+
+          <TouchableOpacity
+            style={[styles.secondaryAction, { marginBottom: 12, backgroundColor: `${BNG_COLORS.info}14` }]}
+            onPress={() => router.push(`/contact/lead/${selectedLead!.id}` as any)}
+          >
+            <FontAwesome name="book" size={18} color={BNG_COLORS.primary} style={{ marginRight: 10 }} />
+            <Text style={styles.secondaryActionText}>Open hub: to-dos, logs, and more</Text>
+          </TouchableOpacity>
 
           {/* Linked Projects — shows projects tied to this contact */}
           {(() => {
@@ -596,9 +790,18 @@ export default function LeadsScreen() {
               <Text style={[styles.secondaryActionText, { color: BNG_COLORS.accent }]}>Delete Lead</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
       ) : showCustomerDetail ? (
-        <View style={styles.detailsContent}>
+        <ScrollView
+          style={styles.detailsScroll}
+          contentContainerStyle={[
+            styles.detailsScrollContent,
+            { paddingHorizontal: horizontalPad },
+            isDesktop && styles.detailsScrollContentDesktop,
+          ]}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+        >
           <View style={styles.detailsHeader}>
             <TouchableOpacity style={styles.backButton} onPress={() => setSelectedCustomerId(null)}>
               <FontAwesome name="arrow-left" size={18} color={BNG_COLORS.text} />
@@ -623,6 +826,16 @@ export default function LeadsScreen() {
               companyName: selectedCustomer!.company_name ?? null,
             }
           )}
+
+          {renderCrmNotesMediaBlock('customer', selectedCustomer!.id)}
+
+          <TouchableOpacity
+            style={[styles.secondaryAction, { marginBottom: 12, backgroundColor: `${BNG_COLORS.info}14` }]}
+            onPress={() => router.push(`/contact/customer/${selectedCustomer!.id}` as any)}
+          >
+            <FontAwesome name="book" size={18} color={BNG_COLORS.primary} style={{ marginRight: 10 }} />
+            <Text style={styles.secondaryActionText}>Open hub: to-dos, logs, and more</Text>
+          </TouchableOpacity>
 
           {/* Linked Projects — shows projects tied to this customer */}
           {(() => {
@@ -683,7 +896,7 @@ export default function LeadsScreen() {
               <Text style={[styles.secondaryActionText, { color: BNG_COLORS.accent }]}>Delete Customer</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
       ) : (
         <View style={styles.emptyState}>
           <View style={styles.emptyStateIconContainer}>
@@ -713,15 +926,21 @@ export default function LeadsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BNG_COLORS.background },
-  splitPane: { flex: 1, flexDirection: 'row' },
+  splitPane: { flex: 1, flexDirection: 'row', minHeight: 0 },
   splitDivider: { width: 1, backgroundColor: BNG_COLORS.border },
-  listContainer: { flex: 1, backgroundColor: BNG_COLORS.background },
-  listContainerTablet: { flex: 0.4, maxWidth: 400 },
+  listContainer: { flex: 1, backgroundColor: BNG_COLORS.background, minWidth: 0 },
+  listContainerTablet: { flex: 0.38, maxWidth: 420, minWidth: 260 },
   listHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16,
   },
+  listHeaderMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 12,
+  },
   listTitle: { fontSize: 28, fontWeight: '800', color: BNG_COLORS.text, letterSpacing: -0.5 },
+  listTitleMobile: { fontSize: 22 },
   scratchpadLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -736,7 +955,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', backgroundColor: BNG_COLORS.surface,
     borderRadius: 10, padding: 4, ...SHADOWS.sm,
   },
+  // Mobile: pill is as wide as its labels — user swipes horizontally if it’s wider than the screen.
+  filterScrollMobile: { width: '100%', flexGrow: 0 },
+  filterScrollContentMobile: { flexGrow: 0, alignItems: 'center' },
+  filterContainerScrollable: { flexDirection: 'row', flexGrow: 0 },
   filterButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  filterButtonMobileScroll: { paddingHorizontal: 14, paddingVertical: 10, flexShrink: 0 },
   filterButtonActive: { backgroundColor: BNG_COLORS.primary },
   filterText: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.textSecondary },
   filterTextActive: { color: '#FFF' },
@@ -748,8 +972,40 @@ const styles = StyleSheet.create({
       android: { elevation: 8 },
     }),
   },
-  detailsContainer: { flex: 1, backgroundColor: BNG_COLORS.background },
-  detailsContent: { flex: 1, padding: 20 },
+  detailsContainer: { flex: 1, backgroundColor: BNG_COLORS.background, minWidth: 0 },
+  detailsScroll: { flex: 1 },
+  detailsScrollContent: { paddingTop: 16, paddingBottom: 56 },
+  detailsScrollContentDesktop: { maxWidth: 720, width: '100%', alignSelf: 'center' },
+  crmInlineCard: {
+    backgroundColor: BNG_COLORS.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.border,
+    ...Platform.select({ ios: SHADOWS.sm, android: { elevation: 2 } }),
+  },
+  crmInlineHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  crmInlineTitle: { fontSize: 16, fontWeight: '700', color: BNG_COLORS.text },
+  crmInlineLink: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.primary },
+  crmInlineMuted: { fontSize: 14, color: BNG_COLORS.textMuted, lineHeight: 20 },
+  notePreviewRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: BNG_COLORS.border,
+  },
+  notePreviewTitle: { fontSize: 15, fontWeight: '600', color: BNG_COLORS.text },
+  notePreviewBody: { fontSize: 14, color: BNG_COLORS.textSecondary, marginTop: 4, lineHeight: 20 },
+  notePreviewDate: { fontSize: 12, color: BNG_COLORS.textMuted, marginTop: 4 },
+  mediaStrip: { marginTop: 4, marginHorizontal: -4 },
+  mediaThumbWrap: { marginRight: 10 },
+  mediaThumb: { width: 72, height: 72, borderRadius: 10 },
+  mediaThumbPlaceholder: { backgroundColor: BNG_COLORS.border },
   detailsHeader: { marginBottom: 16 },
   backButton: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: BNG_COLORS.surface,
@@ -809,13 +1065,14 @@ const styles = StyleSheet.create({
     ...Platform.select({ ios: SHADOWS.sm, android: { elevation: 2 } }),
   },
   contactCardTitle: { fontSize: 16, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 16 },
-  contactRow: { flexDirection: 'row', alignItems: 'center' },
+  contactRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  contactValueCol: { flex: 1, minWidth: 0 },
   contactIconContainer: {
     width: 40, height: 40, borderRadius: 12, backgroundColor: `${BNG_COLORS.primary}10`,
     alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
   contactLabel: { fontSize: 12, color: BNG_COLORS.textMuted, marginBottom: 2 },
-  contactValue: { fontSize: 15, fontWeight: '600', color: BNG_COLORS.text },
+  contactValue: { fontSize: 15, fontWeight: '600', color: BNG_COLORS.text, flexShrink: 1 },
   divider: { height: 1, backgroundColor: BNG_COLORS.border, marginVertical: 12 },
   actionsCard: {
     backgroundColor: BNG_COLORS.surface, borderRadius: 16, padding: 20,
@@ -835,7 +1092,7 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: BNG_COLORS.background, paddingVertical: 12, borderRadius: 10, gap: 8,
   },
-  secondaryActionText: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.text },
+  secondaryActionText: { fontSize: 14, fontWeight: '600', color: BNG_COLORS.text, flexShrink: 1, textAlign: 'center' },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   emptyStateIconContainer: {
     width: 100, height: 100, borderRadius: 50, backgroundColor: BNG_COLORS.surface,

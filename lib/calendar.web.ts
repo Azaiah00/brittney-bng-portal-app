@@ -1,14 +1,12 @@
 /**
- * Web stub for calendar module.
- * react-native-calendar-events is native-only and has no web build.
- * This file is used when bundling for web to avoid Metro resolution errors.
+ * Web stub: react-native-calendar-events is native-only.
  */
 
 export async function requestCalendarPermissions() {
   return false;
 }
 
-export async function createProjectCalendarEvent(
+export async function createDeviceCalendarEvent(
   _title: string,
   _startDate: string,
   _endDate: string,
@@ -17,7 +15,9 @@ export async function createProjectCalendarEvent(
   return null;
 }
 
-export async function updateProjectCalendarEvent(
+export const createProjectCalendarEvent = createDeviceCalendarEvent;
+
+export async function updateDeviceCalendarEvent(
   _eventId: string,
   _title: string,
   _startDate: string,
@@ -25,4 +25,10 @@ export async function updateProjectCalendarEvent(
   _notes: string = ''
 ) {
   return null;
+}
+
+export const updateProjectCalendarEvent = updateDeviceCalendarEvent;
+
+export async function removeDeviceCalendarEvent(_eventId: string): Promise<boolean> {
+  return false;
 }

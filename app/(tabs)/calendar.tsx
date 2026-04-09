@@ -10,13 +10,24 @@ import * as WebBrowser from 'expo-web-browser';
 import { getGoogleCalendarRedirectUri } from '../../lib/googleCalendarOAuth';
 import { requestCalendarPermissions } from '../../lib/calendar';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
-import { fetchEvents, fetchProjects, fetchIntegration, syncGoogleCalendar, disconnectIntegration } from '../../lib/data';
+import {
+  fetchEvents,
+  fetchProjects,
+  fetchIntegration,
+  syncGoogleCalendar,
+  disconnectIntegration,
+  fetchContactTodosDueInRange,
+  fetchLeads,
+  fetchCustomers,
+  GENERAL_TODO_SECTION_TITLE,
+} from '../../lib/data';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { confirmAsync } from '../../lib/confirmDialog';
 import { Database } from '../../types/database';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
+type ContactTodoRow = Database['public']['Tables']['contact_todos']['Row'];
 
 const EVENT_COLORS: Record<string, string> = {
   walkthrough: BNG_COLORS.primary,
@@ -55,6 +66,9 @@ export default function CalendarScreen() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDayIndex, setSelectedDayIndex] = useState(new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [contactTodosWeek, setContactTodosWeek] = useState<ContactTodoRow[]>([]);
+  const [leadNameMap, setLeadNameMap] = useState<Record<string, string>>({});
+  const [customerNameMap, setCustomerNameMap] = useState<Record<string, string>>({});
   const [milestones, setMilestones] = useState<{ title: string; project: string; date: string }[]>([]);
 
   // Calculate the week dates dynamically
@@ -77,8 +91,20 @@ export default function CalendarScreen() {
     try {
       const startStr = toDateStr(weekDates[0]);
       const endStr = toDateStr(weekDates[6]);
-      const evts = await fetchEvents(startStr, endStr);
+      const [evts, leadsData, customersData, todosDue] = await Promise.all([
+        fetchEvents(startStr, endStr),
+        fetchLeads(),
+        fetchCustomers(),
+        fetchContactTodosDueInRange(startStr, endStr),
+      ]);
       setEvents(evts);
+      setContactTodosWeek(todosDue);
+      const lm: Record<string, string> = {};
+      const cm: Record<string, string> = {};
+      leadsData.forEach((l) => { lm[l.id] = l.name; });
+      customersData.forEach((c) => { cm[c.id] = c.name; });
+      setLeadNameMap(lm);
+      setCustomerNameMap(cm);
 
       // Build project lookup so events can show their project name
       const projects = await fetchProjects();
@@ -110,8 +136,24 @@ export default function CalendarScreen() {
   // Build project lookup for event → project name linking
   const [projectMap, setProjectMap] = useState<Record<string, string>>({});
 
-  // Filter events for selected day
+  // Filter events and open contact to-dos for selected day
   const dayEvents = events.filter(e => e.event_date === selectedDateStr);
+  const dayContactTodos = contactTodosWeek.filter((t) => {
+    if (!t.due_at) return false;
+    return toDateStr(new Date(t.due_at)) === selectedDateStr;
+  });
+
+  const contactNameForTodo = (t: ContactTodoRow) => {
+    if (t.lead_id) return leadNameMap[t.lead_id] || 'Lead';
+    if (t.customer_id) return customerNameMap[t.customer_id] || 'Customer';
+    return GENERAL_TODO_SECTION_TITLE;
+  };
+
+  const contactRouteForTodo = (t: ContactTodoRow) => {
+    if (t.lead_id) return `/contact/lead/${t.lead_id}` as const;
+    if (t.customer_id) return `/contact/customer/${t.customer_id}` as const;
+    return '/todos' as const;
+  };
 
   // Connect Google Calendar via OAuth
   const handleConnectGcal = async () => {
@@ -212,8 +254,15 @@ export default function CalendarScreen() {
   // Check if a date is today
   const isToday = (d: Date) => toDateStr(d) === toDateStr(today);
 
-  // Check if any event falls on a date
-  const hasEvent = (d: Date) => events.some(e => e.event_date === toDateStr(d));
+  // Dots on week strip: scheduled events + contact to-dos with a due date
+  const hasEvent = (d: Date) => {
+    const ds = toDateStr(d);
+    if (events.some((e) => e.event_date === ds)) return true;
+    return contactTodosWeek.some((t) => {
+      if (!t.due_at) return false;
+      return toDateStr(new Date(t.due_at)) === ds;
+    });
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -282,6 +331,26 @@ export default function CalendarScreen() {
           )}
         </View>
 
+        {/* Device calendar (Apple Calendar on iOS): used when saving contact to-dos */}
+        <View style={[styles.syncCard, { marginBottom: 16 }]}>
+          <View style={styles.syncIconContainer}>
+            <FontAwesome name="mobile" size={26} color={BNG_COLORS.text} />
+          </View>
+          <View style={styles.syncContent}>
+            <Text style={styles.syncCardTitle}>Apple Calendar and device calendar</Text>
+            <Text style={styles.syncCardText}>
+              {Platform.OS === 'web'
+                ? 'On iPhone or Android, open this app there and add a contact to-do with a due date. You can save it to your device calendar (Apple Calendar on iOS). On the web, use Google Calendar above — browsers cannot write to Apple Calendar.'
+                : 'When you add or edit a contact to-do with a due date, you can choose “Add to device calendar” so it appears in Apple Calendar (iOS) or your default calendar (Android). Tap below to grant calendar access in advance.'}
+            </Text>
+          </View>
+          {Platform.OS !== 'web' ? (
+            <TouchableOpacity style={styles.syncButton} onPress={handleSync}>
+              <Text style={styles.syncButtonText}>Allow access</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
         {/* Week View */}
         <View style={styles.weekCard}>
           <View style={styles.weekHeader}>
@@ -340,10 +409,10 @@ export default function CalendarScreen() {
             </TouchableOpacity>
           </View>
 
-          {dayEvents.length === 0 ? (
+          {dayEvents.length === 0 && dayContactTodos.length === 0 ? (
             <View style={styles.emptyCard}>
               <FontAwesome name="calendar-o" size={32} color={BNG_COLORS.textMuted} />
-              <Text style={styles.emptyText}>No events for this day</Text>
+              <Text style={styles.emptyText}>No events or contact to-dos for this day</Text>
               <TouchableOpacity
                 style={styles.emptyButton}
                 onPress={() => router.push('/add-event')}
@@ -389,6 +458,32 @@ export default function CalendarScreen() {
                   </View>
                 );
               })}
+              {dayEvents.length > 0 && dayContactTodos.length > 0 ? <View style={styles.eventDivider} /> : null}
+              {dayContactTodos.map((t, index) => (
+                <View key={t.id}>
+                  <TouchableOpacity
+                    style={styles.eventItem}
+                    onPress={() => router.push(contactRouteForTodo(t) as any)}
+                  >
+                    <View style={styles.eventTimeColumn}>
+                      <Text style={styles.eventTime}>
+                        {t.due_at
+                          ? new Date(t.due_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                          : '—'}
+                      </Text>
+                    </View>
+                    <View style={[styles.eventLine, { backgroundColor: BNG_COLORS.warning }]} />
+                    <View style={styles.eventContent}>
+                      <Text style={styles.eventTitle}>{t.title}</Text>
+                      <Text style={styles.eventClient}>{contactNameForTodo(t)}</Text>
+                      <View style={[styles.eventTypeBadge, { backgroundColor: `${BNG_COLORS.warning}22` }]}>
+                        <Text style={[styles.eventTypeText, { color: BNG_COLORS.warning }]}>Contact to-do</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                  {index < dayContactTodos.length - 1 && <View style={styles.eventDivider} />}
+                </View>
+              ))}
             </View>
           )}
         </View>

@@ -463,6 +463,134 @@ export interface Database {
           resolved_at?: string | null
         }
       }
+      contact_notes: {
+        Row: {
+          id: string
+          lead_id: string | null
+          customer_id: string | null
+          title: string
+          body: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          lead_id?: string | null
+          customer_id?: string | null
+          title?: string
+          body?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string | null
+          customer_id?: string | null
+          title?: string
+          body?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      contact_media: {
+        Row: {
+          id: string
+          lead_id: string | null
+          customer_id: string | null
+          storage_path: string
+          mime_type: string | null
+          caption: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          lead_id?: string | null
+          customer_id?: string | null
+          storage_path: string
+          mime_type?: string | null
+          caption?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string | null
+          customer_id?: string | null
+          storage_path?: string
+          mime_type?: string | null
+          caption?: string | null
+          created_at?: string
+        }
+      }
+      contact_todos: {
+        Row: {
+          id: string
+          lead_id: string | null
+          customer_id: string | null
+          title: string
+          details: string | null
+          due_at: string | null
+          completed_at: string | null
+          device_calendar_event_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          lead_id?: string | null
+          customer_id?: string | null
+          title: string
+          details?: string | null
+          due_at?: string | null
+          completed_at?: string | null
+          device_calendar_event_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string | null
+          customer_id?: string | null
+          title?: string
+          details?: string | null
+          due_at?: string | null
+          completed_at?: string | null
+          device_calendar_event_id?: string | null
+          created_at?: string
+        }
+      }
+      contact_activity_logs: {
+        Row: {
+          id: string
+          lead_id: string | null
+          customer_id: string | null
+          title: string
+          body: string | null
+          occurred_at: string
+          source_todo_id: string | null
+          source_note_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          lead_id?: string | null
+          customer_id?: string | null
+          title: string
+          body?: string | null
+          occurred_at?: string
+          source_todo_id?: string | null
+          source_note_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string | null
+          customer_id?: string | null
+          title?: string
+          body?: string | null
+          occurred_at?: string
+          source_todo_id?: string | null
+          source_note_id?: string | null
+          created_at?: string
+        }
+      }
       user_integrations: {
         Row: {
           id: string

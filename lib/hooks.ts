@@ -14,7 +14,7 @@ export function useWindowDimensions() {
   return windowDimensions;
 }
 
-// Mobile: < 768, Tablet: 768–1199, Desktop: >= 1200
+// Mobile: < 768, Tablet: 768–1199, Desktop: >= 1200 (width from Dimensions; updates on rotate/resize where supported).
 export type Breakpoint = 'mobile' | 'tablet' | 'desktop';
 
 export function useBreakpoint(): Breakpoint {

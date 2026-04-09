@@ -14,6 +14,9 @@ import { getUserDisplayName, getUserInitials } from '../../lib/userDisplay';
 const NAV_ITEMS = [
   { route: '/', label: 'Dashboard', icon: 'th-large' },
   { route: '/leads', label: 'Contacts', icon: 'users' },
+  { route: '/todos', label: 'To-dos', icon: 'check-square-o' },
+  { route: '/notes', label: 'Notes', icon: 'sticky-note-o' },
+  { route: '/crm-logs', label: 'Logs', icon: 'file-text-o' },
   { route: '/projects', label: 'Projects', icon: 'briefcase' },
   { route: '/crew', label: 'Crew', icon: 'wrench' },
   { route: '/calendar', label: 'Calendar', icon: 'calendar' },
@@ -234,6 +237,9 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="index" />
       <Tabs.Screen name="leads" />
+      <Tabs.Screen name="todos" />
+      <Tabs.Screen name="notes" />
+      <Tabs.Screen name="crm-logs" />
       <Tabs.Screen name="projects" />
       <Tabs.Screen name="crew" />
       <Tabs.Screen name="calendar" />
@@ -267,11 +273,21 @@ const styles = StyleSheet.create({
   },
   searchContainerDesktop: { maxWidth: 440 },
   searchInput: { flex: 1, fontSize: 14, color: BNG_COLORS.text, height: 40 },
+  // Percent horizontal insets + maxWidth keep results readable on tablet and wide desktop.
   searchDropdown: {
-    position: 'absolute', top: 60, left: 180, right: 180, zIndex: 200,
-    backgroundColor: BNG_COLORS.surface, borderRadius: 12, padding: 4,
+    position: 'absolute',
+    top: 56,
+    left: '3%',
+    right: '3%',
+    maxWidth: 560,
+    zIndex: 200,
+    alignSelf: 'center',
+    backgroundColor: BNG_COLORS.surface,
+    borderRadius: 12,
+    padding: 4,
     ...Platform.select({ ios: SHADOWS.lg, android: { elevation: 10 } }),
-    borderWidth: 1, borderColor: BNG_COLORS.border,
+    borderWidth: 1,
+    borderColor: BNG_COLORS.border,
   },
   searchResultItem: {
     flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 8,
@@ -305,16 +321,27 @@ const styles = StyleSheet.create({
   },
   tabsRowMobile: { paddingTop: 6, marginHorizontal: -16 },
   tabsScroll: { paddingHorizontal: 24, gap: 8, paddingBottom: 10 },
+  // Let tabs scroll horizontally on small phones (9 items); avoid flexGrow/space-between which clips or squashes icons.
   tabsScrollMobile: {
-    paddingHorizontal: 12, gap: 4, paddingBottom: 8, justifyContent: 'space-between', flexGrow: 1,
+    paddingHorizontal: 8,
+    gap: 2,
+    paddingBottom: 8,
+    flexGrow: 0,
   },
   tabItem: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 9,
     borderRadius: 100, backgroundColor: BNG_COLORS.background,
   },
   tabItemMobile: {
-    paddingHorizontal: 0, paddingVertical: 0, width: 52, height: 44,
-    borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    minWidth: 44,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   tabItemActive: { backgroundColor: BNG_COLORS.primary, ...SHADOWS.glowPrimary },
   tabText: { fontSize: 13, fontWeight: '600', color: BNG_COLORS.textSecondary },

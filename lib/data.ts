@@ -34,6 +34,20 @@ type ChecklistUpdate = Database['public']['Tables']['checklists']['Update'];
 type PunchItemRow = Database['public']['Tables']['punch_items']['Row'];
 type PunchItemInsert = Database['public']['Tables']['punch_items']['Insert'];
 type PunchItemUpdate = Database['public']['Tables']['punch_items']['Update'];
+export type ContactNoteRow = Database['public']['Tables']['contact_notes']['Row'];
+type ContactNoteInsert = Database['public']['Tables']['contact_notes']['Insert'];
+type ContactNoteUpdate = Database['public']['Tables']['contact_notes']['Update'];
+type ContactMediaRow = Database['public']['Tables']['contact_media']['Row'];
+type ContactMediaInsert = Database['public']['Tables']['contact_media']['Insert'];
+type ContactTodoRow = Database['public']['Tables']['contact_todos']['Row'];
+type ContactTodoInsert = Database['public']['Tables']['contact_todos']['Insert'];
+type ContactTodoUpdate = Database['public']['Tables']['contact_todos']['Update'];
+type ContactActivityLogRow = Database['public']['Tables']['contact_activity_logs']['Row'];
+type ContactActivityLogInsert = Database['public']['Tables']['contact_activity_logs']['Insert'];
+type ContactActivityLogUpdate = Database['public']['Tables']['contact_activity_logs']['Update'];
+
+/** Which side of the unified contact model (lead vs customer) a row belongs to. */
+export type ContactRef = { kind: 'lead'; id: string } | { kind: 'customer'; id: string };
 
 // ─────────────────────────────────────────────────────────────
 // LEADS
@@ -562,4 +576,330 @@ export async function updatePunchItem(id: string, updates: PunchItemUpdate): Pro
 export async function deletePunchItem(id: string): Promise<void> {
   const { error } = await supabase.from('punch_items').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ─────────────────────────────────────────────────────────────
+// CONTACT CRM — notes, media, to-dos, activity logs
+// ─────────────────────────────────────────────────────────────
+
+function contactFilter(ref: ContactRef) {
+  return ref.kind === 'lead'
+    ? { lead_id: ref.id, customer_id: null as string | null }
+    : { lead_id: null as string | null, customer_id: ref.id };
+}
+
+export async function fetchContactNotes(ref: ContactRef): Promise<ContactNoteRow[]> {
+  const col = ref.kind === 'lead' ? 'lead_id' : 'customer_id';
+  const { data, error } = await supabase
+    .from('contact_notes')
+    .select('*')
+    .eq(col, ref.id)
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ContactNoteRow[];
+}
+
+/** All notes for the global Notes tab (newest activity first). */
+export async function fetchAllContactNotes(): Promise<ContactNoteRow[]> {
+  const { data, error } = await supabase
+    .from('contact_notes')
+    .select('*')
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ContactNoteRow[];
+}
+
+/** General (hub) or null when note is not tied to one contact. */
+export function contactRefFromNote(row: ContactNoteRow): ContactRef | null {
+  if (row.lead_id) return { kind: 'lead', id: row.lead_id };
+  if (row.customer_id) return { kind: 'customer', id: row.customer_id };
+  return null;
+}
+
+export type ContactNoteSection = {
+  key: string;
+  title: string;
+  data: ContactNoteRow[];
+};
+
+/**
+ * Group notes for SectionList: General first, then one section per contact (A–Z by name).
+ * Within each section, newest updated_at first.
+ */
+export function groupContactNotesByContact(
+  notes: ContactNoteRow[],
+  nameByKey: Record<string, string>
+): ContactNoteSection[] {
+  const general = notes.filter((n) => !n.lead_id && !n.customer_id);
+  const byContact = new Map<string, ContactNoteRow[]>();
+  for (const n of notes) {
+    const key = n.lead_id ? `lead:${n.lead_id}` : n.customer_id ? `customer:${n.customer_id}` : null;
+    if (!key) continue;
+    if (!byContact.has(key)) byContact.set(key, []);
+    byContact.get(key)!.push(n);
+  }
+  const sortInSection = (arr: ContactNoteRow[]) =>
+    [...arr].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+
+  const sections: ContactNoteSection[] = [];
+  if (general.length > 0) {
+    sections.push({
+      key: '__general__',
+      title: GENERAL_TODO_SECTION_TITLE,
+      data: sortInSection(general),
+    });
+  }
+  const keys = [...byContact.keys()].sort((ka, kb) => {
+    const na = nameByKey[ka] || ka;
+    const nb = nameByKey[kb] || kb;
+    return na.localeCompare(nb);
+  });
+  for (const key of keys) {
+    const list = byContact.get(key);
+    if (!list?.length) continue;
+    sections.push({
+      key,
+      title: nameByKey[key] || 'Contact',
+      data: sortInSection(list),
+    });
+  }
+  return sections;
+}
+
+/** Pass null ref for a General note (both FKs null). Requires DB migration contact_notes_contact_fk. */
+export async function createContactNote(
+  ref: ContactRef | null,
+  payload: Pick<ContactNoteInsert, 'title' | 'body'>
+): Promise<ContactNoteRow> {
+  const now = new Date().toISOString();
+  const row = ref
+    ? {
+        ...contactFilter(ref),
+        title: payload.title ?? '',
+        body: payload.body ?? '',
+        updated_at: now,
+      }
+    : {
+        lead_id: null as null,
+        customer_id: null as null,
+        title: payload.title ?? '',
+        body: payload.body ?? '',
+        updated_at: now,
+      };
+  const { data, error } = await supabase.from('contact_notes').insert([row]).select().single();
+  if (error) throw error;
+  return data as ContactNoteRow;
+}
+
+export async function updateContactNote(id: string, updates: ContactNoteUpdate): Promise<void> {
+  const { error } = await supabase
+    .from('contact_notes')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteContactNote(id: string): Promise<void> {
+  const { error } = await supabase.from('contact_notes').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function fetchContactNote(id: string): Promise<ContactNoteRow | null> {
+  const { data, error } = await supabase.from('contact_notes').select('*').eq('id', id).single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return (data as ContactNoteRow) ?? null;
+}
+
+export async function fetchContactMedia(ref: ContactRef): Promise<ContactMediaRow[]> {
+  const col = ref.kind === 'lead' ? 'lead_id' : 'customer_id';
+  const { data, error } = await supabase
+    .from('contact_media')
+    .select('*')
+    .eq(col, ref.id)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ContactMediaRow[];
+}
+
+export async function createContactMediaRow(row: ContactMediaInsert): Promise<ContactMediaRow> {
+  const { data, error } = await supabase.from('contact_media').insert([row]).select().single();
+  if (error) throw error;
+  return data as ContactMediaRow;
+}
+
+export async function deleteContactMediaRow(id: string): Promise<void> {
+  const { error } = await supabase.from('contact_media').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function fetchContactTodos(ref: ContactRef): Promise<ContactTodoRow[]> {
+  const col = ref.kind === 'lead' ? 'lead_id' : 'customer_id';
+  const { data, error } = await supabase
+    .from('contact_todos')
+    .select('*')
+    .eq(col, ref.id)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ContactTodoRow[];
+}
+
+/** All to-dos for global list (open first, then by due date). */
+export async function fetchAllContactTodos(): Promise<ContactTodoRow[]> {
+  const { data, error } = await supabase
+    .from('contact_todos')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ContactTodoRow[];
+}
+
+export async function createContactTodo(row: ContactTodoInsert): Promise<ContactTodoRow> {
+  const { data, error } = await supabase.from('contact_todos').insert([row]).select().single();
+  if (error) throw error;
+  return data as ContactTodoRow;
+}
+
+export async function updateContactTodo(id: string, updates: ContactTodoUpdate): Promise<void> {
+  const { error } = await supabase.from('contact_todos').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteContactTodo(id: string): Promise<void> {
+  const { error } = await supabase.from('contact_todos').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function fetchContactTodo(id: string): Promise<ContactTodoRow | null> {
+  const { data, error } = await supabase.from('contact_todos').select('*').eq('id', id).single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return (data as ContactTodoRow) ?? null;
+}
+
+export async function fetchContactActivityLogs(ref: ContactRef): Promise<ContactActivityLogRow[]> {
+  const col = ref.kind === 'lead' ? 'lead_id' : 'customer_id';
+  const { data, error } = await supabase
+    .from('contact_activity_logs')
+    .select('*')
+    .eq(col, ref.id)
+    .order('occurred_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ContactActivityLogRow[];
+}
+
+export async function fetchAllContactActivityLogs(): Promise<ContactActivityLogRow[]> {
+  const { data, error } = await supabase
+    .from('contact_activity_logs')
+    .select('*')
+    .order('occurred_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ContactActivityLogRow[];
+}
+
+export async function createContactActivityLog(
+  row: ContactActivityLogInsert
+): Promise<ContactActivityLogRow> {
+  const { data, error } = await supabase.from('contact_activity_logs').insert([row]).select().single();
+  if (error) throw error;
+  return data as ContactActivityLogRow;
+}
+
+export async function updateContactActivityLog(
+  id: string,
+  updates: ContactActivityLogUpdate
+): Promise<void> {
+  const { error } = await supabase.from('contact_activity_logs').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteContactActivityLog(id: string): Promise<void> {
+  const { error } = await supabase.from('contact_activity_logs').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/** To-dos with a due date in [start, end] (YYYY-MM-DD) for calendar strip. */
+export async function fetchContactTodosDueInRange(
+  startDate: string,
+  endDate: string
+): Promise<ContactTodoRow[]> {
+  const start = `${startDate}T00:00:00.000Z`;
+  const end = `${endDate}T23:59:59.999Z`;
+  const { data, error } = await supabase
+    .from('contact_todos')
+    .select('*')
+    .not('due_at', 'is', null)
+    .gte('due_at', start)
+    .lte('due_at', end)
+    .is('completed_at', null);
+  if (error) throw error;
+  return (data ?? []) as ContactTodoRow[];
+}
+
+export function contactRefFromTodo(row: ContactTodoRow): ContactRef | null {
+  if (row.lead_id) return { kind: 'lead', id: row.lead_id };
+  if (row.customer_id) return { kind: 'customer', id: row.customer_id };
+  return null;
+}
+
+/** Label for unassigned to-dos (use app-wide for calendar, lists). */
+export const GENERAL_TODO_SECTION_TITLE = 'General';
+
+export type ContactTodoSection = {
+  key: string;
+  title: string;
+  data: ContactTodoRow[];
+};
+
+/**
+ * Group to-dos for SectionList: "General" first, then one section per contact (A–Z by name).
+ * Within each section, sorts by due date (soonest first), then newest created.
+ */
+export function groupContactTodosByContact(
+  todos: ContactTodoRow[],
+  nameByKey: Record<string, string>
+): ContactTodoSection[] {
+  const general = todos.filter((t) => !t.lead_id && !t.customer_id);
+  const byContact = new Map<string, ContactTodoRow[]>();
+  for (const t of todos) {
+    const key = t.lead_id ? `lead:${t.lead_id}` : t.customer_id ? `customer:${t.customer_id}` : null;
+    if (!key) continue;
+    if (!byContact.has(key)) byContact.set(key, []);
+    byContact.get(key)!.push(t);
+  }
+  const sortInSection = (arr: ContactTodoRow[]) =>
+    [...arr].sort((a, b) => {
+      const ad = a.due_at ? new Date(a.due_at).getTime() : Number.POSITIVE_INFINITY;
+      const bd = b.due_at ? new Date(b.due_at).getTime() : Number.POSITIVE_INFINITY;
+      if (ad !== bd) return ad - bd;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
+  const sections: ContactTodoSection[] = [];
+  if (general.length > 0) {
+    sections.push({
+      key: '__general__',
+      title: GENERAL_TODO_SECTION_TITLE,
+      data: sortInSection(general),
+    });
+  }
+  const keys = [...byContact.keys()].sort((ka, kb) => {
+    const na = nameByKey[ka] || ka;
+    const nb = nameByKey[kb] || kb;
+    return na.localeCompare(nb);
+  });
+  for (const key of keys) {
+    const list = byContact.get(key);
+    if (!list?.length) continue;
+    sections.push({
+      key,
+      title: nameByKey[key] || 'Contact',
+      data: sortInSection(list),
+    });
+  }
+  return sections;
+}
+
+export function contactRefFromActivityLog(row: ContactActivityLogRow): ContactRef | null {
+  if (row.lead_id) return { kind: 'lead', id: row.lead_id };
+  if (row.customer_id) return { kind: 'customer', id: row.customer_id };
+  return null;
 }

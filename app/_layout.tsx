@@ -226,6 +226,58 @@ function RootLayoutNav() {
             headerTintColor: '#fff',
           }} 
         />
+        <Stack.Screen
+          name="pick-contact"
+          options={{
+            title: 'Choose contact',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }}
+        />
+        <Stack.Screen
+          name="add-contact-todo"
+          options={{
+            presentation: 'modal',
+            title: 'New to-do',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }}
+        />
+        <Stack.Screen
+          name="edit-contact-todo"
+          options={{
+            presentation: 'modal',
+            title: 'Edit to-do',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }}
+        />
+        <Stack.Screen
+          name="add-contact-log"
+          options={{
+            presentation: 'modal',
+            title: 'New log',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }}
+        />
+        <Stack.Screen
+          name="contact-note-editor"
+          options={{
+            presentation: 'modal',
+            title: 'Note',
+            headerStyle: { backgroundColor: '#E8E8E8' },
+            headerTintColor: BNG_COLORS.text,
+          }}
+        />
+        <Stack.Screen
+          name="contact/[type]/[id]"
+          options={{
+            title: 'Contact',
+            headerStyle: { backgroundColor: BNG_COLORS.primary },
+            headerTintColor: '#fff',
+          }}
+        />
       </Stack>
     </ThemeProvider>
   );

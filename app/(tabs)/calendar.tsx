@@ -1,13 +1,17 @@
 import React, { useState, useCallback } from 'react';
 import {
   StyleSheet, View, Text, SafeAreaView, TouchableOpacity,
-  Alert, Platform, ScrollView, ActivityIndicator,
+  Alert, Platform, ScrollView, ActivityIndicator, Linking,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import * as WebBrowser from 'expo-web-browser';
-import { getGoogleCalendarRedirectUri } from '../../lib/googleCalendarOAuth';
+import {
+  getGoogleCalendarRedirectUri,
+  getGoogleCalendarRedirectUrisToRegister,
+} from '../../lib/googleCalendarOAuth';
 import { requestCalendarPermissions } from '../../lib/calendar';
 import { BNG_COLORS, SHADOWS } from '../../lib/theme';
 import {
@@ -155,6 +159,8 @@ export default function CalendarScreen() {
     return '/todos' as const;
   };
 
+  const googleCalendarRedirectUris = getGoogleCalendarRedirectUrisToRegister();
+
   // Connect Google Calendar via OAuth
   const handleConnectGcal = async () => {
     if (!user?.id) {
@@ -162,10 +168,18 @@ export default function CalendarScreen() {
       return;
     }
 
+    const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
+    if (!clientId.trim()) {
+      Alert.alert(
+        'Missing Google client ID',
+        'Set EXPO_PUBLIC_GOOGLE_CLIENT_ID in .env to your Google Cloud “Web application” OAuth client ID, then restart the dev server.'
+      );
+      return;
+    }
+
     setIsConnecting(true);
     try {
       const redirectUri = getGoogleCalendarRedirectUri();
-      const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
       const scope = 'https://www.googleapis.com/auth/calendar.events';
 
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
@@ -281,22 +295,16 @@ export default function CalendarScreen() {
           </View>
         </View>
 
-        {/* Google Calendar Card */}
-        <View style={styles.syncCard}>
-          <View style={styles.syncIconContainer}>
-            <FontAwesome
-              name={isGcalConnected ? 'check-circle' : 'google'}
-              size={28}
-              color={isGcalConnected ? BNG_COLORS.success : '#4285F4'}
-            />
-          </View>
-          <View style={styles.syncContent}>
-            <Text style={styles.syncCardTitle}>Google Calendar</Text>
-            <Text style={styles.syncCardText}>
-              {isGcalConnected ? 'Connected. Tap Sync to push events.' : 'Connect to sync your BNG events.'}
-            </Text>
-          </View>
-          {isGcalConnected ? (
+        {/* Google Calendar — setup lives IN this card when not connected so demos never miss it */}
+        {isGcalConnected ? (
+          <View style={styles.syncCard}>
+            <View style={styles.syncIconContainer}>
+              <FontAwesome name="check-circle" size={28} color={BNG_COLORS.success} />
+            </View>
+            <View style={styles.syncContent}>
+              <Text style={styles.syncCardTitle}>Google Calendar</Text>
+              <Text style={styles.syncCardText}>Connected. Tap Sync to push events.</Text>
+            </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity
                 style={styles.syncButton}
@@ -316,20 +324,68 @@ export default function CalendarScreen() {
                 <FontAwesome name="unlink" size={14} color="#FFF" />
               </TouchableOpacity>
             </View>
-          ) : (
-            <TouchableOpacity
-              style={[styles.syncButton, { backgroundColor: '#4285F4' }]}
-              onPress={handleConnectGcal}
-              disabled={isConnecting}
-            >
-              {isConnecting ? (
-                <ActivityIndicator color="#FFF" size="small" />
-              ) : (
-                <Text style={styles.syncButtonText}>Connect</Text>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
+          </View>
+        ) : (
+          <View style={styles.googleBundle}>
+            <View style={[styles.syncCard, styles.syncCardFlush]}>
+              <View style={styles.syncIconContainer}>
+                <FontAwesome name="google" size={28} color="#4285F4" />
+              </View>
+              <View style={styles.syncContent}>
+                <Text style={styles.syncCardTitle}>Google Calendar</Text>
+                <Text style={styles.syncCardText}>Connect to sync your BNG events.</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.syncButton, { backgroundColor: '#4285F4' }]}
+                onPress={handleConnectGcal}
+                disabled={isConnecting}
+              >
+                {isConnecting ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Text style={styles.syncButtonText}>Connect</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.gcalSetupBox}>
+              <Text style={styles.gcalSetupTitle}>Why Connect might fail (two different Google settings)</Text>
+              <Text style={styles.gcalSetupBody}>
+                • Test users (e.g. Brittney’s Gmail): lets specific people see the Google permission screen.{'\n'}
+                • Authorized redirect URIs: tells Google which website URL is allowed to finish the login. If this
+                is missing, you get “redirect_uri_mismatch” even when test users are added.{'\n\n'}
+                Add BOTH lines below to the same Web OAuth client as your EXPO_PUBLIC_GOOGLE_CLIENT_ID → Authorized
+                redirect URIs, then Save.
+              </Text>
+              <TouchableOpacity
+                style={styles.gcalSetupLink}
+                onPress={() => Linking.openURL('https://console.cloud.google.com/apis/credentials')}
+              >
+                <Text style={styles.gcalSetupLinkText}>Open Google Cloud → Credentials</Text>
+              </TouchableOpacity>
+              {googleCalendarRedirectUris.map((uri) => (
+                <View key={uri} style={styles.gcalUriRow}>
+                  <Text style={styles.gcalUriText} selectable>
+                    {uri}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.gcalCopyBtn}
+                    onPress={async () => {
+                      await Clipboard.setStringAsync(uri);
+                      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                        window.alert('Copied. Paste into Authorized redirect URIs in Google Cloud.');
+                      } else {
+                        Alert.alert('Copied', uri);
+                      }
+                    }}
+                  >
+                    <Text style={styles.gcalCopyBtnText}>Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* Device calendar (Apple Calendar on iOS): used when saving contact to-dos */}
         <View style={[styles.syncCard, { marginBottom: 16 }]}>
@@ -542,6 +598,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 16, padding: 20, borderRadius: 16, marginBottom: 20,
     ...Platform.select({ ios: SHADOWS.sm, android: { elevation: 2 } }),
   },
+  /** Wraps Google row + yellow setup when not connected — outer horizontal margin only here */
+  googleBundle: { marginHorizontal: 16, marginBottom: 20 },
+  /** Top card inside googleBundle — no double side margins */
+  syncCardFlush: { marginHorizontal: 0, marginBottom: 12 },
   syncIconContainer: {
     width: 56, height: 56, borderRadius: 16, backgroundColor: BNG_COLORS.background,
     alignItems: 'center', justifyContent: 'center', marginRight: 16,
@@ -612,5 +672,43 @@ const styles = StyleSheet.create({
   milestoneTitle: { fontSize: 16, fontWeight: '700', color: BNG_COLORS.text, marginBottom: 2 },
   milestoneProject: { fontSize: 14, color: BNG_COLORS.textSecondary, marginBottom: 2 },
   milestoneDate: { fontSize: 12, color: BNG_COLORS.textMuted, fontWeight: '500' },
+  gcalSetupBox: {
+    marginHorizontal: 0,
+    marginBottom: 0,
+    padding: 16,
+    backgroundColor: '#FFF9E6',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F5D78E',
+  },
+  gcalSetupTitle: { fontSize: 15, fontWeight: '800', color: BNG_COLORS.text, marginBottom: 8 },
+  gcalSetupBody: { fontSize: 13, color: BNG_COLORS.textSecondary, lineHeight: 19, marginBottom: 10 },
+  gcalSetupLink: { marginBottom: 12, alignSelf: 'flex-start' },
+  gcalSetupLinkText: { fontSize: 13, fontWeight: '700', color: BNG_COLORS.primary },
+  gcalUriRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 10,
+    flexWrap: 'wrap',
+  },
+  gcalUriText: {
+    flex: 1,
+    minWidth: 180,
+    fontSize: 12,
+    color: BNG_COLORS.text,
+    ...Platform.select({
+      web: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' },
+      default: { fontFamily: 'monospace' },
+    }),
+  },
+  gcalCopyBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: BNG_COLORS.primary,
+    borderRadius: 8,
+  },
+  gcalCopyBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   bottomSpacing: { height: 40 },
 });

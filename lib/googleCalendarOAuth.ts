@@ -23,3 +23,33 @@ export function getGoogleCalendarRedirectUri(): string {
     path: CALLBACK_PATH,
   });
 }
+
+/**
+ * Every URI Google may see for this session — register ALL of them on the same Web OAuth client
+ * (Authorized redirect URIs). localhost vs 127.0.0.1 are different strings and both cause mismatch if missing.
+ */
+export function getGoogleCalendarRedirectUrisToRegister(): string[] {
+  const primary = getGoogleCalendarRedirectUri();
+  const out = new Set<string>([primary]);
+
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    try {
+      const u = new URL(window.location.href);
+      const swap =
+        u.hostname === 'localhost'
+          ? '127.0.0.1'
+          : u.hostname === '127.0.0.1'
+            ? 'localhost'
+            : null;
+      if (swap) {
+        const port = u.port ? `:${u.port}` : '';
+        const altOrigin = `${u.protocol}//${swap}${port}`.replace(/\/$/, '');
+        out.add(`${altOrigin}/${CALLBACK_PATH}`);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return [...out];
+}

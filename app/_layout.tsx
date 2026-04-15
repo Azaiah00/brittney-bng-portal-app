@@ -67,8 +67,10 @@ function useProtectedRoute() {
     }
 
     const inLogin = segments[0] === 'login';
+    // Google OAuth branding requires public privacy/terms URLs on this domain.
+    const inPublicLegal = segments[0] === 'privacy' || segments[0] === 'terms';
 
-    if (!session && !inLogin) {
+    if (!session && !inLogin && !inPublicLegal) {
       router.replace('/login');
     } else if (session && inLogin) {
       router.replace('/');
@@ -84,6 +86,8 @@ function RootLayoutNav() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="privacy" options={{ title: 'Privacy' }} />
+        <Stack.Screen name="terms" options={{ title: 'Terms' }} />
         <Stack.Screen name="calendar/callback" options={{ headerShown: false }} />
         <Stack.Screen name="setup-wizard" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

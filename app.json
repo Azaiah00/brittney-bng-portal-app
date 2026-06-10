@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "brittany-bng-remodel-app",
-    "slug": "brittany-bng-remodel-app",
+    "name": "BNG Remodel",
+    "slug": "bng-remodel-portal",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -13,6 +13,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "com.bngremodel.portal",
+      "buildNumber": "1",
       "supportsTablet": true,
       "infoPlist": {
         "NSCalendarsUsageDescription": "BNG Remodel needs access to your calendar to schedule project dates.",
@@ -22,6 +24,8 @@
       }
     },
     "android": {
+      "package": "com.bngremodel.portal",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

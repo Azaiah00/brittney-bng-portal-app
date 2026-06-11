@@ -24,17 +24,13 @@ const PROFILE_SECTIONS = [
   {
     title: 'Business',
     items: [
-      { id: 'templates', icon: 'file-text-o', label: 'Estimate Templates', hasArrow: true },
-      { id: 'team', icon: 'users', label: 'Team Members', hasArrow: true },
       { id: 'integrations', icon: 'plug', label: 'Integrations', hasArrow: true, badge: '4' },
-      { id: 'billing', icon: 'credit-card', label: 'Billing & Subscription', hasArrow: true },
     ],
   },
   {
     title: 'Preferences',
     items: [
       { id: 'theme', icon: 'moon-o', label: 'Dark Mode', hasToggle: true },
-      { id: 'language', icon: 'globe', label: 'Language', value: 'English', hasArrow: true },
     ],
   },
   {
@@ -81,12 +77,6 @@ export default function SettingsScreen() {
       case 'privacy':
         Alert.alert('Privacy & Security', 'Your data is stored securely in Supabase with row-level security.');
         break;
-      case 'templates':
-        Alert.alert('Estimate Templates', 'You can create estimates from any project. Templates coming soon.');
-        break;
-      case 'team':
-        Alert.alert('Team Members', 'Team management is coming in a future update.');
-        break;
       case 'integrations':
         Alert.alert(
           'Integrations',
@@ -97,12 +87,6 @@ export default function SettingsScreen() {
           `4. SignNow (E-Signatures) — Server-side`
         );
         break;
-      case 'billing':
-        Alert.alert('Billing', 'BNG Remodel Pro Plan\nNo charges at this time.');
-        break;
-      case 'language':
-        Alert.alert('Language', 'Currently set to English. More languages coming soon.');
-        break;
       case 'help':
         Alert.alert('Help Center', 'Need help? Contact Brittney at bngremodel@gmail.com or call support.');
         break;
@@ -112,7 +96,7 @@ export default function SettingsScreen() {
       case 'about':
         Alert.alert(
           'About BNG Remodel',
-          'BNG Remodel App v1.0.0\n\nBNG Remodel, Richmond VA\n\nPowered by Supabase & Gemini AI'
+          'BNG Remodel App v1.0.0\n\nBNG Remodel, Nashville, TN\n\nPowered by Supabase & Gemini AI'
         );
         break;
       default:
@@ -194,9 +178,6 @@ export default function SettingsScreen() {
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{displayName}</Text>
             <Text style={styles.profileRole}>Owner &bull; BNG Remodel</Text>
-            <View style={styles.profileBadge}>
-              <Text style={styles.profileBadgeText}>Pro Plan</Text>
-            </View>
           </View>
           <TouchableOpacity
             style={styles.editButton}

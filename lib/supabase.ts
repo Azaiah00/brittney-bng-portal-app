@@ -37,6 +37,8 @@ function getAuthStorage() {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  // BNG lives in its own `bng` schema within the shared Supabase project.
+  db: { schema: 'bng' },
   auth: {
     storage: getAuthStorage(),
     autoRefreshToken: true,

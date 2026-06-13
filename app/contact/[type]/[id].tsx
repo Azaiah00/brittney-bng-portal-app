@@ -55,7 +55,7 @@ export default function ContactHubScreen() {
       setLogs(l);
       const urls: Record<string, string> = {};
       for (const row of m) {
-        const { data } = await supabase.storage.from('contact-media').createSignedUrl(row.storage_path, 3600);
+        const { data } = await supabase.storage.from('bng-contact-media').createSignedUrl(row.storage_path, 3600);
         if (data?.signedUrl) urls[row.id] = data.signedUrl;
       }
       setThumbUrls(urls);
@@ -91,7 +91,7 @@ export default function ContactHubScreen() {
       const res = await fetch(asset.uri);
       const blob = await res.blob();
       const mime = asset.mimeType || 'image/jpeg';
-      const { error: upErr } = await supabase.storage.from('contact-media').upload(path, blob, {
+      const { error: upErr } = await supabase.storage.from('bng-contact-media').upload(path, blob, {
         contentType: mime,
         upsert: false,
       });

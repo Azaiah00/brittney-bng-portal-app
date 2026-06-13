@@ -11,6 +11,7 @@ import { fetchDashboardStats, DashboardStats, fetchIntegration } from '../../lib
 import { useAuth } from '../../lib/auth';
 import { getUserDisplayName, getUserInitials } from '../../lib/userDisplay';
 import { confirmAsync } from '../../lib/confirmDialog';
+import { supabase } from '../../lib/supabase';
 
 const PROFILE_SECTIONS = [
   {
@@ -19,6 +20,7 @@ const PROFILE_SECTIONS = [
       { id: 'profile', icon: 'user-o', label: 'Edit Profile', hasArrow: true },
       { id: 'notifications', icon: 'bell-o', label: 'Notifications', hasToggle: true },
       { id: 'privacy', icon: 'lock', label: 'Privacy & Security', hasArrow: true },
+      { id: 'delete-account', icon: 'trash-o', label: 'Delete Account', hasArrow: true },
     ],
   },
   {
@@ -69,6 +71,24 @@ export default function SettingsScreen() {
   );
 
   // ── Handlers for each settings item ──
+  const handleDeleteAccount = async () => {
+    const ok = await confirmAsync({
+      title: 'Delete Account',
+      message: 'This permanently deletes your account and sign-in. This cannot be undone. Continue?',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      const { error } = await supabase.functions.invoke('delete-account');
+      if (error) throw error;
+      await signOut();
+      router.replace('/login');
+    } catch (e: any) {
+      Alert.alert('Delete Account', e?.message || 'Could not delete your account. Please try again.');
+    }
+  };
+
   const handleItemPress = (id: string) => {
     switch (id) {
       case 'profile':
@@ -98,6 +118,9 @@ export default function SettingsScreen() {
           'About BNG Remodel',
           'BNG Remodel App v1.0.0\n\nBNG Remodel, Nashville, TN\n\nPowered by Supabase & Gemini AI'
         );
+        break;
+      case 'delete-account':
+        handleDeleteAccount();
         break;
       default:
         break;

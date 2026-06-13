@@ -100,7 +100,7 @@ export default function LeadsScreen() {
       const urls: Record<string, string> = {};
       for (const m of mediaSlice) {
         const { data } = await supabase.storage
-          .from('contact-media')
+          .from('bng-contact-media')
           .createSignedUrl(m.storage_path, 3600);
         if (data?.signedUrl) urls[m.id] = data.signedUrl;
       }

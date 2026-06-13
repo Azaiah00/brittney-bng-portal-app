@@ -6,6 +6,7 @@ import { Platform } from 'react-native';
 import { Session, User } from '@supabase/supabase-js';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { supabase } from './supabase';
 
 // Needed so the auth session closes properly on web
@@ -16,6 +17,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -24,6 +26,7 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
   signInWithGoogle: async () => {},
+  signInWithApple: async () => {},
   signOut: async () => {},
 });
 
@@ -110,6 +113,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Sign in with Apple (iOS only) — uses the native Apple modal, then exchanges
+  // the identity token with Supabase. Required by App Store guideline 4.8 since
+  // we also offer Google sign-in.
+  const signInWithApple = useCallback(async () => {
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        throw new Error('No identity token returned from Apple.');
+      }
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      if (err?.code === 'ERR_REQUEST_CANCELED') return;
+      console.error('Apple sign-in error:', err);
+      throw err;
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       const { error } = await supabase.auth.signOut();
@@ -135,6 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user: session?.user ?? null,
         loading,
         signInWithGoogle,
+        signInWithApple,
         signOut,
       }}
     >

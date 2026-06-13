@@ -7,10 +7,11 @@ import {
   ActivityIndicator, Alert, Platform, SafeAreaView,
 } from 'react-native';
 import { BNG_COLORS, SHADOWS } from '../lib/theme';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuth } from '../lib/auth';
 
 export default function LoginScreen() {
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, signInWithApple } = useAuth();
   const [loading, setLoading] = useState(false);
 
   const handleGoogleSignIn = async () => {
@@ -19,6 +20,17 @@ export default function LoginScreen() {
       await signInWithGoogle();
     } catch (err: any) {
       Alert.alert('Sign In Error', err.message || 'Could not sign in with Google.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    setLoading(true);
+    try {
+      await signInWithApple();
+    } catch (err: any) {
+      Alert.alert('Sign In Error', err.message || 'Could not sign in with Apple.');
     } finally {
       setLoading(false);
     }
@@ -68,6 +80,17 @@ export default function LoginScreen() {
             {loading ? 'Signing in...' : 'Sign in with Google'}
           </Text>
         </TouchableOpacity>
+
+        {/* Sign in with Apple — required on iOS since Google is offered (4.8) */}
+        {Platform.OS === 'ios' && (
+          <AppleAuthentication.AppleAuthenticationButton
+            buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+            cornerRadius={14}
+            style={styles.appleButton}
+            onPress={handleAppleSignIn}
+          />
+        )}
 
         {/* Footer */}
         <View style={styles.footer}>
@@ -189,6 +212,13 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: BNG_COLORS.text,
+  },
+
+  appleButton: {
+    width: '100%',
+    maxWidth: 400,
+    height: 52,
+    marginTop: 14,
   },
 
   // Footer
